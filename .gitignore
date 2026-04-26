@@ -1,0 +1,28 @@
+# Data files (quá lớn cho GitHub)
+data/*.pdf
+raw_text/
+clean_text/
+processed/
+outputs/
+results/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+dist/
+build/
+.eggs/
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Secrets
+.env
+*.key
