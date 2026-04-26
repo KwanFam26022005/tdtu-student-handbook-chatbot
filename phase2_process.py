@@ -19,6 +19,8 @@ import os
 import re
 import json
 import time
+import sys
+import math
 import unicodedata
 from pathlib import Path
 
@@ -398,10 +400,11 @@ def generate_qa_batch(chunks: list[dict], batch_size: int = 5) -> list[dict]:
     genai.configure(api_key=api_key)
     
     # Danh sách model fallback (thử lần lượt khi bị quota)
+    # gemini-2.0-flash và 1.5-flash đã deprecated/xóa → dùng 2.5 series
     MODEL_CHAIN = [
-        "gemini-2.0-flash",
-        "gemini-1.5-flash",
-        "gemini-1.5-flash-8b",
+        "gemini-2.5-flash",       # Stable, best price-performance
+        "gemini-2.5-flash-lite",  # Budget, fastest
+        "gemini-2.0-flash",       # Deprecated nhưng vẫn chạy được (fallback cuối)
     ]
     
     current_model_idx = 0
@@ -427,103 +430,182 @@ def generate_qa_batch(chunks: list[dict], batch_size: int = 5) -> list[dict]:
         if match:
             return float(match.group(1)) + 2  # +2s buffer
         return 60  # Default 60s nếu không parse được
+
+    def parse_json_array(response_text: str) -> list[dict] | None:
+        """Parse JSON array an toàn từ output model (có thể kèm markdown/code-fence)."""
+        if not response_text:
+            return None
+
+        cleaned = response_text.strip()
+        cleaned = re.sub(r"^```(?:json)?\s*", "", cleaned, flags=re.IGNORECASE)
+        cleaned = re.sub(r"\s*```$", "", cleaned)
+
+        # Thử parse trực tiếp trước
+        try:
+            parsed = json.loads(cleaned)
+            if isinstance(parsed, list):
+                return parsed
+        except Exception:
+            pass
+
+        # Fallback: lấy JSON array lớn nhất trong text
+        start_idx = cleaned.find("[")
+        end_idx = cleaned.rfind("]")
+        if start_idx != -1 and end_idx != -1 and end_idx > start_idx:
+            candidate = cleaned[start_idx:end_idx + 1]
+            try:
+                parsed = json.loads(candidate)
+                if isinstance(parsed, list):
+                    return parsed
+            except Exception:
+                return None
+
+        return None
     
     consecutive_429 = 0
     MAX_CONSECUTIVE_429 = 5  # Sau 5 lần 429 liên tiếp → chuyển model
+    base_sleep_seconds = max(4.0, 60.0 / max(batch_size * 3, 15))
+    min_qa_per_chunk = 3
+    max_qa_per_chunk = 5
     
-    for chunk in chunks:
-        # Skip chunk đã xử lý
-        if chunk["id"] in done_ids:
-            continue
+    pending_chunks = [c for c in chunks if c["id"] not in done_ids]
+    total_pending = len(pending_chunks)
+    if total_pending:
+        print(f"   🧩 Còn {total_pending} chunks cần xử lý")
+
+    # Chạy theo nhiều vòng để tránh bỏ sót chunk khi gặp quota tạm thời
+    max_global_passes = 4
+    for pass_idx in range(1, max_global_passes + 1):
+        if not pending_chunks:
+            break
+
+        print(f"\n   🔁 Pass {pass_idx}/{max_global_passes} - pending: {len(pending_chunks)} chunks")
+        next_round_pending = []
+
+        for chunk in pending_chunks:
+            # Skip chunk đã xử lý
+            if chunk["id"] in done_ids:
+                continue
         
-        prompt = f"""{QA_SYSTEM_PROMPT}
+            prompt = f"""{QA_SYSTEM_PROMPT}
 
 Đoạn văn bản quy chế:
 ---
 {chunk['text_with_context']}
 ---
 
-Hãy tạo 3-5 cặp câu hỏi-trả lời từ đoạn trên. Trả về JSON array."""
+Hãy tạo từ {min_qa_per_chunk} đến {max_qa_per_chunk} cặp câu hỏi-trả lời từ đoạn trên.
+Chỉ trả về JSON array hợp lệ, không thêm markdown/code fence."""
         
-        # Retry logic cho mỗi chunk
-        max_retries = 3
-        success = False
-        
-        for attempt in range(max_retries):
-            try:
-                response = model.generate_content(prompt)
-                response_text = response.text
-                
-                # Parse JSON từ response
-                json_match = re.search(r'\[.*\]', response_text, re.DOTALL)
-                if json_match:
-                    qa_pairs = json.loads(json_match.group(0))
-                    
-                    # Thêm metadata
-                    for qa in qa_pairs:
-                        qa["source"] = chunk["source"]
-                        qa["section"] = chunk.get("section", "")
-                        qa["chunk_id"] = chunk["id"]
-                    
-                    all_qa.extend(qa_pairs)
-                    done_ids.add(chunk["id"])
-                    consecutive_429 = 0  # Reset counter
-                    
-                    print(f"   ✅ Chunk {chunk['id']}: {len(qa_pairs)} QA pairs "
-                          f"(tổng: {len(all_qa)})")
-                    success = True
-                else:
-                    print(f"   ⚠️  Chunk {chunk['id']}: Không parse được JSON")
-                    done_ids.add(chunk["id"])  # Skip chunk lỗi format
-                    success = True
-                
-                break  # Thoát retry loop
-                    
-            except Exception as e:
-                error_msg = str(e)
-                
-                if "429" in error_msg or "quota" in error_msg.lower():
-                    consecutive_429 += 1
-                    wait_time = parse_retry_seconds(error_msg)
-                    
-                    # Nếu 429 liên tiếp quá nhiều → thử model khác
-                    if consecutive_429 >= MAX_CONSECUTIVE_429:
-                        current_model_idx += 1
-                        if current_model_idx < len(MODEL_CHAIN):
-                            new_model = MODEL_CHAIN[current_model_idx]
-                            print(f"\n   🔄 Chuyển sang model: {new_model}")
-                            model = genai.GenerativeModel(new_model)
-                            consecutive_429 = 0
-                            wait_time = 5  # Thử ngay với model mới
-                        else:
-                            print(f"\n   ⏸️  Tất cả model đều bị quota. "
-                                  f"Đã lưu {len(all_qa)} QA. Chờ reset quota rồi chạy lại.")
-                            # Lưu progress trước khi thoát
-                            with open(progress_path, "w", encoding="utf-8") as f:
-                                json.dump({"qa_pairs": all_qa, 
-                                          "done_chunk_ids": list(done_ids)}, 
-                                         f, ensure_ascii=False, indent=2)
-                            return all_qa
-                    
-                    print(f"   ⏳ 429 Rate limit (lần {attempt+1}). "
-                          f"Chờ {wait_time:.0f}s...")
-                    time.sleep(wait_time)
-                else:
-                    print(f"   ❌ Chunk {chunk['id']} (lần {attempt+1}): {error_msg[:100]}")
-                    time.sleep(5)
-        
-        if not success:
-            print(f"   ⏭️  Bỏ qua chunk {chunk['id']} sau {max_retries} lần thử")
-        
-        # Lưu progress sau mỗi 10 chunks thành công
-        if len(done_ids) % 10 == 0 and len(done_ids) > 0:
-            with open(progress_path, "w", encoding="utf-8") as f:
-                json.dump({"qa_pairs": all_qa, 
-                          "done_chunk_ids": list(done_ids)}, 
-                         f, ensure_ascii=False, indent=2)
-            print(f"   💾 Progress saved: {len(all_qa)} QA / {len(done_ids)} chunks")
-        
-        time.sleep(4)  # Base rate limit: 15 RPM
+            # Retry logic cho mỗi chunk
+            max_retries = 3
+            success = False
+
+            for attempt in range(max_retries):
+                try:
+                    response = model.generate_content(prompt)
+                    response_text = getattr(response, "text", "")
+                    qa_pairs = parse_json_array(response_text)
+
+                    if qa_pairs:
+                        # Lọc output để tránh format không hợp lệ
+                        valid_pairs = []
+                        for qa in qa_pairs:
+                            if not isinstance(qa, dict):
+                                continue
+                            question = str(qa.get("question", "")).strip()
+                            answer = str(qa.get("answer", "")).strip()
+                            qa_type = str(qa.get("type", "factual")).strip().lower()
+                            if not question or not answer:
+                                continue
+                            if qa_type not in {"factual", "conditional", "procedural", "reasoning"}:
+                                qa_type = "factual"
+                            valid_pairs.append({
+                                "question": question,
+                                "answer": answer,
+                                "type": qa_type,
+                                "source": chunk["source"],
+                                "section": chunk.get("section", ""),
+                                "chunk_id": chunk["id"],
+                            })
+
+                        if valid_pairs:
+                            all_qa.extend(valid_pairs)
+                            done_ids.add(chunk["id"])
+                            consecutive_429 = 0  # Reset counter
+                            base_sleep_seconds = max(3.5, base_sleep_seconds * 0.95)
+                            print(
+                                f"   ✅ Chunk {chunk['id']}: {len(valid_pairs)} QA pairs "
+                                f"(tổng: {len(all_qa)})"
+                            )
+                            success = True
+                            break
+
+                    print(f"   ⚠️  Chunk {chunk['id']}: JSON không hợp lệ (lần {attempt+1})")
+                    time.sleep(3 + attempt * 2)
+                except Exception as e:
+                    error_msg = str(e)
+
+                    if "429" in error_msg or "quota" in error_msg.lower():
+                        consecutive_429 += 1
+                        wait_time = max(parse_retry_seconds(error_msg), base_sleep_seconds * 1.5)
+                        base_sleep_seconds = min(65.0, max(base_sleep_seconds * 1.25, wait_time / 2))
+
+                        # Nếu 429 liên tiếp quá nhiều → thử model khác
+                        if consecutive_429 >= MAX_CONSECUTIVE_429:
+                            current_model_idx += 1
+                            if current_model_idx < len(MODEL_CHAIN):
+                                new_model = MODEL_CHAIN[current_model_idx]
+                                print(f"\n   🔄 Chuyển sang model: {new_model}")
+                                model = genai.GenerativeModel(new_model)
+                                consecutive_429 = 0
+                                wait_time = 5  # Thử sớm với model mới
+                            else:
+                                print(
+                                    f"\n   ⏸️  Tất cả model đều bị quota. "
+                                    f"Đã lưu {len(all_qa)} QA. Chờ reset quota rồi chạy lại."
+                                )
+                                with open(progress_path, "w", encoding="utf-8") as f:
+                                    json.dump(
+                                        {"qa_pairs": all_qa, "done_chunk_ids": list(done_ids)},
+                                        f,
+                                        ensure_ascii=False,
+                                        indent=2,
+                                    )
+                                return all_qa
+
+                        print(f"   ⏳ 429 Rate limit (lần {attempt+1}). Chờ {wait_time:.0f}s...")
+                        time.sleep(wait_time)
+                    elif "503" in error_msg or "unavailable" in error_msg.lower():
+                        wait_time = min(40.0, 8.0 * (attempt + 1))
+                        print(f"   ⏳ 503 Service unavailable (lần {attempt+1}). Chờ {wait_time:.0f}s...")
+                        time.sleep(wait_time)
+                    else:
+                        print(f"   ❌ Chunk {chunk['id']} (lần {attempt+1}): {error_msg[:120]}")
+                        time.sleep(5 + attempt * 2)
+
+            if not success:
+                # Không đánh dấu done; retry lại ở pass sau
+                next_round_pending.append(chunk)
+                print(f"   🔁 Sẽ retry chunk {chunk['id']} ở pass sau")
+
+            # Lưu progress sau mỗi 10 chunks thành công
+            if len(done_ids) % 10 == 0 and len(done_ids) > 0:
+                with open(progress_path, "w", encoding="utf-8") as f:
+                    json.dump(
+                        {"qa_pairs": all_qa, "done_chunk_ids": list(done_ids)},
+                        f,
+                        ensure_ascii=False,
+                        indent=2,
+                    )
+                print(f"   💾 Progress saved: {len(all_qa)} QA / {len(done_ids)} chunks")
+
+            time.sleep(base_sleep_seconds)  # Adaptive pacing
+
+        pending_chunks = next_round_pending
+
+    if pending_chunks:
+        print(f"\n   ⚠️  Còn {len(pending_chunks)} chunks chưa xử lý sau {max_global_passes} passes.")
     
     # Lưu progress cuối cùng
     with open(progress_path, "w", encoding="utf-8") as f:
@@ -562,14 +644,15 @@ def process_qa_generation():
     with open(qa_all_path, "w", encoding="utf-8") as f:
         json.dump(qa_pairs, f, ensure_ascii=False, indent=2)
     
-    # Split: 300+ train, 50 test  
+    # Split train/test an toàn khi dataset còn ít
     # Ưu tiên đa dạng type cho test set
     import random
     random.seed(42)
     random.shuffle(qa_pairs)
     
-    test_set = qa_pairs[:50]
-    train_set = qa_pairs[50:]
+    test_size = min(50, max(1, math.floor(len(qa_pairs) * 0.25)))
+    test_set = qa_pairs[:test_size]
+    train_set = qa_pairs[test_size:]
     
     # Lưu train/test
     train_path = OUTPUT_DIR / "qa_train.json"
