@@ -1,19 +1,16 @@
 """
-Phase 3 – Fine-tuning Qwen2.5-3B-Instruct với QLoRA trên Colab.
+Phase 3 (Unsloth) – Fine-tuning Qwen2.5-3B-Instruct với QLoRA trên Colab.
 
-Workflow:
-  1. Load base model (4-bit quantized)
-  2. Thêm LoRA adapters
-  3. Prepare training data (chat format)
-  4. Train với SFTTrainer
-  5. Save & push lên HuggingFace Hub
+Phiên bản sử dụng Unsloth để tăng tốc 2x và tự động xử lý dtype/precision.
+Nếu Unsloth bị lỗi import, dùng phase3_finetune.py (bản thuần Hugging Face).
 
 Cài đặt (trên Colab):
+  !pip install --upgrade --no-cache-dir "unsloth[colab-new] @ git+https://github.com/unslothai/unsloth.git"
+  !pip install --upgrade --no-cache-dir --no-deps unsloth_zoo
   !pip install -Uq --no-deps trl peft accelerate bitsandbytes
-  !pip install -Uq transformers datasets
 
 Chạy:
-  Chạy trên Google Colab với GPU T4
+  Restart runtime sau khi cài xong, rồi: python phase3_finetune_unsloth.py
 """
 
 import os
@@ -26,7 +23,7 @@ from pathlib import Path
 BASE_DIR = Path(__file__).resolve().parent if "__file__" in dir() else Path(".")
 
 # Model config
-MODEL_NAME = "Qwen/Qwen2.5-3B-Instruct"
+MODEL_NAME = "unsloth/Qwen2.5-3B-Instruct"  # Bản Unsloth (tối ưu sẵn)
 MAX_SEQ_LENGTH = 2048
 LOAD_IN_4BIT = True
 
@@ -48,7 +45,7 @@ WARMUP_STEPS = 10
 
 # Output
 OUTPUT_DIR_TRAIN = BASE_DIR / "outputs" / "finetune"
-HF_REPO_ID = "KwanFam26022005/tdtu-qwen2.5-3b-lora"  # Đổi thành repo của bạn
+HF_REPO_ID = "KwanFam26022005/tdtu-qwen2.5-3b-lora"
 
 # System prompt cho chatbot
 SYSTEM_PROMPT = """Bạn là trợ lý AI chuyên về quy chế và sổ tay sinh viên Trường Đại học Tôn Đức Thắng (TDTU).
@@ -58,56 +55,39 @@ Nếu không chắc chắn, hãy nói rõ rằng bạn không tìm thấy thông
 
 
 # ══════════════════════════════════════════════════════════
-# 1. LOAD MODEL
+# 1. LOAD MODEL (Unsloth)
 # ══════════════════════════════════════════════════════════
 
 def load_model():
-    """Load Qwen2.5-3B-Instruct với 4-bit quantization + LoRA (Thuần Hugging Face)"""
-    from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig
-    from peft import LoraConfig, get_peft_model, prepare_model_for_kbit_training
-    import torch
-    
-    print("[INIT] Loading tokenizer...")
-    tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME, trust_remote_code=True)
-    if tokenizer.pad_token is None:
-        tokenizer.pad_token = tokenizer.eos_token
-    
-    print("[INIT] Loading base model in 4-bit...")
-    bnb_config = BitsAndBytesConfig(
+    """Load Qwen2.5-3B-Instruct với Unsloth (4-bit + LoRA, tự xử lý dtype)"""
+    from unsloth import FastLanguageModel
+
+    print("[INIT] Loading base model...")
+    model, tokenizer = FastLanguageModel.from_pretrained(
+        model_name=MODEL_NAME,
+        max_seq_length=MAX_SEQ_LENGTH,
+        dtype=None,  # Auto detect
         load_in_4bit=LOAD_IN_4BIT,
-        bnb_4bit_quant_type="nf4",
-        bnb_4bit_compute_dtype=torch.float16,
-        bnb_4bit_use_double_quant=True,
     )
-    
-    model = AutoModelForCausalLM.from_pretrained(
-        MODEL_NAME,
-        quantization_config=bnb_config if LOAD_IN_4BIT else None,
-        device_map="auto",
-        trust_remote_code=True,
-    )
-    
-    # Chuẩn bị cho 4-bit training
-    model = prepare_model_for_kbit_training(model)
-    
+
     print("[INIT] Adding LoRA adapters...")
-    lora_config = LoraConfig(
+    model = FastLanguageModel.get_peft_model(
+        model,
         r=LORA_R,
-        lora_alpha=LORA_ALPHA,
         target_modules=TARGET_MODULES,
+        lora_alpha=LORA_ALPHA,
         lora_dropout=LORA_DROPOUT,
         bias="none",
-        task_type="CAUSAL_LM"
+        use_gradient_checkpointing="unsloth",  # Tiet kiem 30% VRAM
+        random_state=42,
     )
-    
-    model = get_peft_model(model, lora_config)
-    
-    # In thông tin model
+
+    # In thong tin model
     trainable = sum(p.numel() for p in model.parameters() if p.requires_grad)
     total = sum(p.numel() for p in model.parameters())
     print(f"[OK] Model loaded!")
     print(f"   Trainable params: {trainable:,} / {total:,} ({100*trainable/total:.2f}%)")
-    
+
     return model, tokenizer
 
 
@@ -116,20 +96,20 @@ def load_model():
 # ══════════════════════════════════════════════════════════
 
 def prepare_dataset(tokenizer):
-    """Chuyển QA pairs sang chat format cho SFTTrainer"""
-    
+    """Chuyen QA pairs sang chat format cho SFTTrainer"""
+
     qa_train_path = BASE_DIR / "processed" / "qa_train.json"
     if not qa_train_path.exists():
         print(f"[ERROR] Khong tim thay {qa_train_path}")
         print("   Chay phase2_process.py truoc!")
         return None
-    
+
     with open(qa_train_path, "r", encoding="utf-8") as f:
         qa_pairs = json.load(f)
-    
+
     print(f"[INFO] Loaded {len(qa_pairs)} QA pairs")
-    
-    # Chuyển sang chat format
+
+    # Chuyen sang chat format
     formatted_data = []
     for qa in qa_pairs:
         messages = [
@@ -137,29 +117,22 @@ def prepare_dataset(tokenizer):
             {"role": "user", "content": qa["question"]},
             {"role": "assistant", "content": qa["answer"]}
         ]
-        
+
         # Apply chat template
         text = tokenizer.apply_chat_template(
-            messages, 
-            tokenize=False, 
+            messages,
+            tokenize=False,
             add_generation_prompt=False
         )
-        
-        # Truncate nếu quá dài (thay cho max_seq_length của SFTConfig)
-        tokens = tokenizer.encode(text, add_special_tokens=False)
-        if len(tokens) > MAX_SEQ_LENGTH:
-            tokens = tokens[:MAX_SEQ_LENGTH]
-            text = tokenizer.decode(tokens, skip_special_tokens=False)
-        
         formatted_data.append({"text": text})
-    
-    # Tạo HuggingFace Dataset
+
+    # Tao HuggingFace Dataset
     from datasets import Dataset
     dataset = Dataset.from_list(formatted_data)
-    
+
     print(f"[OK] Dataset: {len(dataset)} samples")
-    print(f"   Ví dụ: {dataset[0]['text'][:200]}...")
-    
+    print(f"   Vi du: {dataset[0]['text'][:200]}...")
+
     return dataset
 
 
@@ -168,69 +141,56 @@ def prepare_dataset(tokenizer):
 # ══════════════════════════════════════════════════════════
 
 def train(model, tokenizer, dataset):
-    """Fine-tune model bằng SFTTrainer (tương thích mọi phiên bản trl)"""
+    """Fine-tune model bang SFTTrainer (Unsloth compatible)"""
     from trl import SFTTrainer
     from transformers import TrainingArguments
-    
-    OUTPUT_DIR_TRAIN.mkdir(parents=True, exist_ok=True)
-    
-    # Auto-detect precision: bf16 không dùng GradScaler nên tránh crash
-    # fp16 GradScaler KHÔNG tương thích với bitsandbytes 4-bit (luôn sinh bf16 gradients)
     import torch
-    use_bf16 = torch.cuda.is_available() and torch.cuda.is_bf16_supported()
-    print(f"   [INFO] Mixed precision: {'bf16' if use_bf16 else 'fp32 (no mixed precision)'}")
-    
-    training_args = TrainingArguments(
-        per_device_train_batch_size=BATCH_SIZE,
-        gradient_accumulation_steps=GRAD_ACCUM_STEPS,
-        warmup_steps=WARMUP_STEPS,
-        num_train_epochs=NUM_EPOCHS,
-        learning_rate=LEARNING_RATE,
-        fp16=False,           # KHÔNG dùng fp16 với bitsandbytes 4-bit
-        bf16=use_bf16,        # bf16 nếu GPU hỗ trợ (không dùng GradScaler)
-        logging_steps=5,
-        optim="adamw_8bit",
-        weight_decay=0.01,
-        lr_scheduler_type="cosine",
-        seed=42,
-        output_dir=str(OUTPUT_DIR_TRAIN),
-        save_strategy="epoch",
-        report_to="none",
+
+    OUTPUT_DIR_TRAIN.mkdir(parents=True, exist_ok=True)
+
+    trainer = SFTTrainer(
+        model=model,
+        tokenizer=tokenizer,
+        train_dataset=dataset,
+        dataset_text_field="text",
+        max_seq_length=MAX_SEQ_LENGTH,
+        dataset_num_proc=2,
+        packing=True,  # Pack multiple samples vao 1 sequence
+        args=TrainingArguments(
+            per_device_train_batch_size=BATCH_SIZE,
+            gradient_accumulation_steps=GRAD_ACCUM_STEPS,
+            warmup_steps=WARMUP_STEPS,
+            num_train_epochs=NUM_EPOCHS,
+            learning_rate=LEARNING_RATE,
+            fp16=not torch.cuda.is_bf16_supported(),
+            bf16=torch.cuda.is_bf16_supported(),
+            logging_steps=5,
+            optim="adamw_8bit",
+            weight_decay=0.01,
+            lr_scheduler_type="cosine",
+            seed=42,
+            output_dir=str(OUTPUT_DIR_TRAIN),
+            save_strategy="epoch",
+            report_to="none",
+        ),
     )
-    
-    # Auto-detect API: trl mới dùng processing_class, cũ dùng tokenizer
-    try:
-        trainer = SFTTrainer(
-            model=model,
-            processing_class=tokenizer,
-            train_dataset=dataset,
-            args=training_args,
-        )
-    except TypeError:
-        trainer = SFTTrainer(
-            model=model,
-            tokenizer=tokenizer,
-            train_dataset=dataset,
-            args=training_args,
-        )
-    
+
     print("\n[TRAIN] Bat dau fine-tuning...")
     print(f"   Epochs: {NUM_EPOCHS}")
     print(f"   Batch size (effective): {BATCH_SIZE * GRAD_ACCUM_STEPS}")
     print(f"   Learning rate: {LEARNING_RATE}")
-    
-    # GPU memory trước training
-    import torch
+
+    # GPU memory truoc training
     if torch.cuda.is_available():
         print(f"   GPU Memory: {torch.cuda.memory_allocated()/1e9:.2f} GB used")
-    
+
     # Train
     stats = trainer.train()
-    
+
     print(f"\n[OK] Training hoan tat!")
     print(f"   Total steps: {stats.global_step}")
     print(f"   Training loss: {stats.training_loss:.4f}")
-    
+
     return trainer
 
 
@@ -239,15 +199,15 @@ def train(model, tokenizer, dataset):
 # ══════════════════════════════════════════════════════════
 
 def save_model(model, tokenizer):
-    """Lưu LoRA adapter + push lên HuggingFace Hub"""
-    
-    # Lưu local
+    """Luu LoRA adapter + merge model + push len HuggingFace Hub"""
+
+    # Luu local
     lora_path = OUTPUT_DIR_TRAIN / "lora_adapter"
     model.save_pretrained(str(lora_path))
     tokenizer.save_pretrained(str(lora_path))
     print(f"[OK] LoRA adapter saved: {lora_path}")
-    
-    # Push lên HuggingFace Hub (optional)
+
+    # Push len HuggingFace Hub (optional)
     try:
         hf_token = os.environ.get("HF_TOKEN", "")
         if hf_token:
@@ -256,12 +216,17 @@ def save_model(model, tokenizer):
             print(f"[OK] Pushed to HuggingFace Hub: {HF_REPO_ID}")
         else:
             print("[WARNING] HF_TOKEN khong set, bo qua push to Hub")
-            print("   Đặt: export HF_TOKEN='hf_...'")
+            print("   Dat: export HF_TOKEN='hf_...'")
     except Exception as e:
         print(f"[WARNING] Push to Hub loi: {e}")
-    
-    # Không hỗ trợ merge model tự động bằng PEFT khi đang load 4-bit,
-    # Phase 4 (RAG) sẽ tự động load base model + adapter riêng nên không cần thiết.
+
+    # Merge model (Unsloth ho tro merge 4-bit -> full model)
+    try:
+        merged_path = OUTPUT_DIR_TRAIN / "merged_model"
+        model.save_pretrained_merged(str(merged_path), tokenizer)
+        print(f"[OK] Merged model saved: {merged_path}")
+    except Exception as e:
+        print(f"[WARNING] Merge loi (co the thieu RAM): {e}")
 
 
 # ══════════════════════════════════════════════════════════
@@ -269,21 +234,21 @@ def save_model(model, tokenizer):
 # ══════════════════════════════════════════════════════════
 if __name__ == "__main__":
     print("╔══════════════════════════════════════════════════════════╗")
-    print("║   PHASE 3 – Fine-tuning Qwen2.5-3B (QLoRA)            ║")
+    print("║   PHASE 3 – Fine-tuning Qwen2.5-3B (QLoRA + Unsloth)  ║")
     print("╚══════════════════════════════════════════════════════════╝\n")
-    
+
     # 1. Load model
     model, tokenizer = load_model()
-    
+
     # 2. Prepare data
     dataset = prepare_dataset(tokenizer)
     if dataset is None:
         exit(1)
-    
+
     # 3. Train
     trainer = train(model, tokenizer, dataset)
-    
+
     # 4. Save
     save_model(model, tokenizer)
-    
+
     print("\n[OK] Phase 3 hoan tat! Tiep theo: chay phase4_rag.py")
