@@ -330,7 +330,6 @@ def build_vector_store():
         batch_size=32,
         normalize_embeddings=True
     )
-    
     # Build FAISS index
     import faiss
     
@@ -375,36 +374,361 @@ Trả về JSON array:
 [{"question": "...", "answer": "...", "type": "factual|conditional|procedural|reasoning"}]"""
 
 
-def generate_qa_batch(chunks: list[dict], batch_size: int = 5) -> list[dict]:
+def generate_qa_template(chunk: dict) -> list[dict]:
     """
-    Sinh QA pairs từ chunks bằng Gemini API.
+    Sinh QA pairs từ chunk bằng template — KHÔNG cần API.
+    Trích xuất thông tin từ văn bản quy chế tiếng Việt bằng regex.
+    Đảm bảo 2-4 QA/chunk cho chunks có đủ nội dung.
+    """
+    text = chunk['text']
+    section = chunk.get('section', '')
+    chapter = chunk.get('chapter', '')
+    source = chunk.get('source', '').replace('_', ' ')
+    chunk_id = chunk.get('id', '')
     
-    Features:
-      - Exponential backoff khi bị 429 (quota exceeded)
-      - Parse retry-after time từ error message
-      - Resume từ file progress (không chạy lại chunk đã xong)
-      - Fallback model chain khi model chính bị quota
-      - Lưu progress sau mỗi chunk thành công
+    qa_pairs = []
     
-    Cần set: GOOGLE_API_KEY environment variable
+    # Split thành sentences
+    sentences = [s.strip() for s in re.split(r'(?<=[.;])\s+', text) if len(s.strip()) > 25]
+    if len(sentences) < 1:
+        return []
+    
+    def make_answer(sents, n=3):
+        ans = '. '.join(sents[:n])
+        return ans if ans.endswith(('.', ';', ':')) else ans + '.'
+    
+    def src_prefix():
+        if section and section != "Phần mở đầu":
+            return f"Theo {section}, "
+        return "Theo quy chế, "
+    
+    def make_qa(q, a, qtype):
+        return {"question": q, "answer": a, "type": qtype,
+                "source": chunk.get("source", ""), "section": section,
+                "chunk_id": chunk_id, "generated_by": "template"}
+    
+    # 1. FACTUAL: nội dung chính
+    if section and section != "Phần mở đầu" and len(sentences) >= 2:
+        qa_pairs.append(make_qa(
+            f"{section} quy định những nội dung gì?",
+            make_answer(sentences), "factual"))
+    elif len(sentences) >= 2:
+        topic = sentences[0][:80].rstrip(' ,;:')
+        qa_pairs.append(make_qa(
+            f"Quy chế quy định gì về: \"{topic}\"?",
+            make_answer(sentences), "factual"))
+    
+    # 2. FACTUAL: số liệu
+    for pat, desc in [(r'\d+\s*tín chỉ', 'số tín chỉ'), (r'\d+\s*học kỳ', 'số học kỳ'),
+                      (r'\d+\s*ngày', 'số ngày'), (r'\d+\s*tháng', 'số tháng'),
+                      (r'\d+(?:[.,]\d+)?\s*điểm', 'mức điểm'), (r'\d+\s*%', 'tỷ lệ'),
+                      (r'\d+\s*năm', 'thời gian'), (r'\d+\s*lần', 'số lần')]:
+        m = re.search(pat, text)
+        if m:
+            for s in sentences:
+                if m.group(0) in s:
+                    qa_pairs.append(make_qa(
+                        f"{src_prefix()}{desc} được quy định như thế nào?",
+                        s.strip() + ('.' if not s.strip().endswith('.') else ''),
+                        "factual"))
+                    break
+            break
+    
+    # 3. CONDITIONAL
+    for pat in [r'[Nn]ếu\s+.{15,}?(?:thì|sẽ|phải).{10,}?[.;]',
+                r'[Tt]rường hợp\s+.{15,}?[.;]',
+                r'[Kk]hông được\s+.{10,}?[.;]']:
+        cm = re.search(pat, text)
+        if cm:
+            matched = cm.group(0).strip()
+            if 'không được' in matched.lower():
+                qa_pairs.append(make_qa(
+                    f"{src_prefix()}sinh viên không được làm gì?",
+                    matched, "conditional"))
+            else:
+                qa_pairs.append(make_qa(
+                    f"Điều gì xảy ra trong trường hợp được nêu tại {section or 'quy chế'}?",
+                    matched, "conditional"))
+            break
+    
+    # 4. PROCEDURAL
+    for kw in ['thủ tục', 'quy trình', 'hồ sơ', 'trình tự', 'bao gồm', 'cần có']:
+        if kw in text.lower():
+            for s in sentences:
+                if kw in s.lower():
+                    qa_pairs.append(make_qa(
+                        f"{src_prefix()}{kw} được quy định thế nào?",
+                        s.strip() + ('.' if not s.strip().endswith('.') else ''),
+                        "procedural"))
+                    break
+            break
+    
+    # 5. REASONING
+    for kw in ['nhằm', 'mục đích', 'với mục tiêu', 'để đảm bảo']:
+        if kw in text.lower():
+            for s in sentences:
+                if kw in s.lower():
+                    qa_pairs.append(make_qa(
+                        f"Mục đích của {section if section else 'quy định này'} là gì?",
+                        s.strip(), "reasoning"))
+                    break
+            break
+    
+    # Đảm bảo ít nhất 2 QA
+    if len(qa_pairs) < 2 and len(sentences) >= 3:
+        qa_pairs.append(make_qa(
+            f"Hãy tóm tắt nội dung chính của {section if section else 'đoạn quy chế này'}.",
+            make_answer(sentences, 4), "factual"))
+    
+    return qa_pairs[:4]
+
+
+def generate_qa_api(chunks: list[dict]) -> tuple[list[dict], set]:
+    """
+    Sinh QA pairs bằng Gemini API (best-effort).
+    Returns: (qa_pairs, done_chunk_ids)
     """
     import google.generativeai as genai
     
     api_key = os.environ.get("GOOGLE_API_KEY", "")
     if not api_key:
-        print("⚠️  Chưa set GOOGLE_API_KEY!")
-        print("   export GOOGLE_API_KEY='your-key-here'")
-        print("   Hoặc trên Colab: from google.colab import userdata; key = userdata.get('GOOGLE_API_KEY')")
-        return []
+        print("   ⚠️  Không có GOOGLE_API_KEY → chỉ dùng template")
+        return [], set()
     
     genai.configure(api_key=api_key)
     
-    # Danh sách model fallback (thử lần lượt khi bị quota)
-    # gemini-2.0-flash và 1.5-flash đã deprecated/xóa → dùng 2.5 series
     MODEL_CHAIN = [
-        "gemini-2.5-flash",       # Stable, best price-performance
-        "gemini-2.5-flash-lite",  # Budget, fastest
-        "gemini-2.0-flash",       # Deprecated nhưng vẫn chạy được (fallback cuối)
+        "gemini-2.5-flash",
+        "gemini-2.5-flash-lite",
+        "gemini-2.0-flash",
+    ]
+    
+    current_model_idx = 0
+    model = genai.GenerativeModel(MODEL_CHAIN[current_model_idx])
+    print(f"   🤖 Model: {MODEL_CHAIN[current_model_idx]}")
+    
+    # Resume logic
+    progress_path = OUTPUT_DIR / "qa_progress.json"
+    if progress_path.exists():
+        with open(progress_path, "r", encoding="utf-8") as f:
+            progress_data = json.load(f)
+        all_qa = progress_data.get("qa_pairs", [])
+        done_ids = set(progress_data.get("done_chunk_ids", []))
+        print(f"   📂 Resume: {len(all_qa)} QA từ {len(done_ids)} chunks")
+    else:
+        all_qa = []
+        done_ids = set()
+    
+    pending = [c for c in chunks if c["id"] not in done_ids]
+    print(f"   🧩 Còn {len(pending)} chunks cần API")
+    
+    if not pending:
+        return all_qa, done_ids
+    
+    consecutive_429 = 0
+    
+    for chunk in pending:
+        prompt = f"""{QA_SYSTEM_PROMPT}
+
+Đoạn văn bản quy chế:
+---
+{chunk['text_with_context']}
+---
+
+Hãy tạo 3-5 cặp câu hỏi-trả lời. CHỈ trả về JSON array, KHÔNG markdown."""
+        
+        success = False
+        for attempt in range(3):
+            try:
+                response = model.generate_content(prompt)
+                resp = response.text
+                
+                # Robust JSON parse
+                resp_clean = re.sub(r'```json\s*', '', resp)
+                resp_clean = re.sub(r'```\s*', '', resp_clean)
+                json_match = re.search(r'\[.*\]', resp_clean, re.DOTALL)
+                
+                if json_match:
+                    qa_pairs = json.loads(json_match.group(0))
+                    valid = []
+                    for qa in qa_pairs:
+                        if not isinstance(qa, dict):
+                            continue
+                        q = str(qa.get("question", "")).strip()
+                        a = str(qa.get("answer", "")).strip()
+                        t = str(qa.get("type", "factual")).strip().lower()
+                        if not q or not a:
+                            continue
+                        if t not in {"factual", "conditional", "procedural", "reasoning"}:
+                            t = "factual"
+                        valid.append({
+                            "question": q, "answer": a, "type": t,
+                            "source": chunk["source"],
+                            "section": chunk.get("section", ""),
+                            "chunk_id": chunk["id"],
+                            "generated_by": "api"
+                        })
+                    if valid:
+                        all_qa.extend(valid)
+                        done_ids.add(chunk["id"])
+                        consecutive_429 = 0
+                        print(f"   ✅ {chunk['id']}: {len(valid)} QA (tổng: {len(all_qa)})")
+                        success = True
+                        break
+                
+                print(f"   ⚠️  {chunk['id']}: JSON parse fail (lần {attempt+1})")
+                done_ids.add(chunk["id"])
+                success = True
+                break
+                
+            except Exception as e:
+                err = str(e)
+                if "429" in err or "quota" in err.lower():
+                    consecutive_429 += 1
+                    wait = 60
+                    m = re.search(r'retry in (\d+\.?\d*)', err)
+                    if m:
+                        wait = float(m.group(1)) + 5
+                    
+                    if consecutive_429 >= 5:
+                        current_model_idx += 1
+                        if current_model_idx < len(MODEL_CHAIN):
+                            nm = MODEL_CHAIN[current_model_idx]
+                            print(f"\n   🔄 Chuyển model: {nm}")
+                            model = genai.GenerativeModel(nm)
+                            consecutive_429 = 0
+                            wait = 10
+                        else:
+                            print(f"\n   ⏸️  Hết quota. Lưu {len(all_qa)} QA từ API.")
+                            with open(progress_path, "w", encoding="utf-8") as f:
+                                json.dump({"qa_pairs": all_qa,
+                                          "done_chunk_ids": list(done_ids)},
+                                         f, ensure_ascii=False, indent=2)
+                            return all_qa, done_ids
+                    
+                    print(f"   ⏳ 429 (lần {attempt+1}). Chờ {wait:.0f}s...")
+                    time.sleep(wait)
+                else:
+                    print(f"   ❌ {chunk['id']}: {err[:80]}")
+                    time.sleep(5)
+        
+        if not success:
+            print(f"   ⏭️  Skip {chunk['id']}")
+        
+        # Save progress mỗi 10 chunks
+        if len(done_ids) % 10 == 0 and len(done_ids) > 0:
+            with open(progress_path, "w", encoding="utf-8") as f:
+                json.dump({"qa_pairs": all_qa, "done_chunk_ids": list(done_ids)},
+                         f, ensure_ascii=False, indent=2)
+            print(f"   💾 Saved: {len(all_qa)} QA / {len(done_ids)} chunks")
+        
+        time.sleep(6)
+    
+    # Save cuối
+    with open(progress_path, "w", encoding="utf-8") as f:
+        json.dump({"qa_pairs": all_qa, "done_chunk_ids": list(done_ids)},
+                 f, ensure_ascii=False, indent=2)
+    
+    return all_qa, done_ids
+
+
+def process_qa_generation():
+    """
+    Sinh QA pairs: API trước, template bổ sung.
+    Đảm bảo ≥300 QA pairs cho training.
+    """
+    print("\n📝 PHASE 2D: Generate QA Pairs")
+    print("=" * 60)
+    
+    chunks_path = OUTPUT_DIR / "chunks.json"
+    if not chunks_path.exists():
+        print("❌ Chưa có chunks.json!")
+        return False
+    
+    with open(chunks_path, "r", encoding="utf-8") as f:
+        chunks = json.load(f)
+    
+    print(f"  📄 {len(chunks)} chunks")
+    print(f"  🎯 Mục tiêu: ≥300 QA pairs cho training")
+    print(f"  📋 Chiến lược: API (best-effort) + Template (fallback)\n")
+    
+    # ── Bước 1: Thử API ──
+    print("  ── Bước 1: Gemini API ──")
+    api_qa, api_done_ids = generate_qa_api(chunks)
+    print(f"\n  📊 API: {len(api_qa)} QA từ {len(api_done_ids)} chunks")
+    
+    # ── Bước 2: Template cho chunks còn lại ──
+    print("\n  ── Bước 2: Template-based generation ──")
+    template_qa = []
+    template_count = 0
+    for chunk in chunks:
+        if chunk["id"] in api_done_ids:
+            continue  # Đã có từ API
+        tqa = generate_qa_template(chunk)
+        if tqa:
+            template_qa.extend(tqa)
+            template_count += 1
+    
+    print(f"  📊 Template: {len(template_qa)} QA từ {template_count} chunks")
+    
+    # ── Bước 3: Nếu vẫn thiếu, sinh template cho TẤT CẢ chunks ──
+    all_qa = api_qa + template_qa
+    if len(all_qa) < 300:
+        print(f"\n  ⚠️  Mới có {len(all_qa)} QA, cần thêm. Sinh template cho chunks đã có API...")
+        for chunk in chunks:
+            if chunk["id"] not in api_done_ids:
+                continue  # Đã sinh template ở bước 2
+            tqa = generate_qa_template(chunk)
+            # Chỉ thêm QA không trùng
+            existing_questions = {q["question"] for q in all_qa}
+            for qa in tqa:
+                if qa["question"] not in existing_questions:
+                    all_qa.append(qa)
+                    existing_questions.add(qa["question"])
+            if len(all_qa) >= 350:
+                break
+    
+    if not all_qa:
+        print("❌ Không sinh được QA nào!")
+        return False
+    
+    # ── Lưu kết quả ──
+    qa_all_path = OUTPUT_DIR / "qa_all.json"
+    with open(qa_all_path, "w", encoding="utf-8") as f:
+        json.dump(all_qa, f, ensure_ascii=False, indent=2)
+    
+    # Split train/test
+    import random
+    random.seed(42)
+    random.shuffle(all_qa)
+    
+    test_size = min(50, len(all_qa) // 5)
+    test_set = all_qa[:test_size]
+    train_set = all_qa[test_size:]
+    
+    train_path = OUTPUT_DIR / "qa_train.json"
+    test_path = OUTPUT_DIR / "qa_test.json"
+    
+    with open(train_path, "w", encoding="utf-8") as f:
+        json.dump(train_set, f, ensure_ascii=False, indent=2)
+    with open(test_path, "w", encoding="utf-8") as f:
+        json.dump(test_set, f, ensure_ascii=False, indent=2)
+    
+    print(f"\n✅ Tổng QA: {len(all_qa)}")
+    print(f"   Train: {len(train_set)} → {train_path}")
+    print(f"   Test:  {len(test_set)} → {test_path}")
+    
+    # Thống kê
+    from collections import Counter
+    types = Counter(qa.get("type", "unknown") for qa in all_qa)
+    sources = Counter(qa.get("generated_by", "unknown") for qa in all_qa)
+    print(f"   Phân bố type: {dict(types)}")
+    print(f"   Nguồn: {dict(sources)}")
+    
+    return True
+
+
+
     ]
     
     current_model_idx = 0
