@@ -9,8 +9,8 @@ Workflow:
   5. Save & push lên HuggingFace Hub
 
 Cài đặt (trên Colab):
-  !pip install -Uq "unsloth[colab-new] @ git+https://github.com/unslothai/unsloth.git"
   !pip install -Uq --no-deps trl peft accelerate bitsandbytes
+  !pip install -Uq transformers datasets
 
 Chạy:
   Chạy trên Google Colab với GPU T4
@@ -26,7 +26,7 @@ from pathlib import Path
 BASE_DIR = Path(__file__).resolve().parent if "__file__" in dir() else Path(".")
 
 # Model config
-MODEL_NAME = "unsloth/Qwen2.5-3B-Instruct"
+MODEL_NAME = "Qwen/Qwen2.5-3B-Instruct"
 MAX_SEQ_LENGTH = 2048
 LOAD_IN_4BIT = True
 
@@ -62,28 +62,45 @@ Nếu không chắc chắn, hãy nói rõ rằng bạn không tìm thấy thông
 # ══════════════════════════════════════════════════════════
 
 def load_model():
-    """Load Qwen2.5-3B-Instruct với 4-bit quantization + LoRA"""
-    from unsloth import FastLanguageModel
+    """Load Qwen2.5-3B-Instruct với 4-bit quantization + LoRA (Thuần Hugging Face)"""
+    from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig
+    from peft import LoraConfig, get_peft_model, prepare_model_for_kbit_training
+    import torch
     
-    print("[INIT] Loading base model...")
-    model, tokenizer = FastLanguageModel.from_pretrained(
-        model_name=MODEL_NAME,
-        max_seq_length=MAX_SEQ_LENGTH,
-        dtype=None,  # Auto detect
+    print("[INIT] Loading tokenizer...")
+    tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME, trust_remote_code=True)
+    if tokenizer.pad_token is None:
+        tokenizer.pad_token = tokenizer.eos_token
+    
+    print("[INIT] Loading base model in 4-bit...")
+    bnb_config = BitsAndBytesConfig(
         load_in_4bit=LOAD_IN_4BIT,
+        bnb_4bit_quant_type="nf4",
+        bnb_4bit_compute_dtype=torch.bfloat16,
+        bnb_4bit_use_double_quant=True,
     )
+    
+    model = AutoModelForCausalLM.from_pretrained(
+        MODEL_NAME,
+        quantization_config=bnb_config if LOAD_IN_4BIT else None,
+        device_map="auto",
+        trust_remote_code=True,
+    )
+    
+    # Chuẩn bị cho 4-bit training
+    model = prepare_model_for_kbit_training(model)
     
     print("[INIT] Adding LoRA adapters...")
-    model = FastLanguageModel.get_peft_model(
-        model,
+    lora_config = LoraConfig(
         r=LORA_R,
-        target_modules=TARGET_MODULES,
         lora_alpha=LORA_ALPHA,
+        target_modules=TARGET_MODULES,
         lora_dropout=LORA_DROPOUT,
         bias="none",
-        use_gradient_checkpointing="unsloth",
-        random_state=42,
+        task_type="CAUSAL_LM"
     )
+    
+    model = get_peft_model(model, lora_config)
     
     # In thông tin model
     trainable = sum(p.numel() for p in model.parameters() if p.requires_grad)
@@ -145,35 +162,37 @@ def prepare_dataset(tokenizer):
 
 def train(model, tokenizer, dataset):
     """Fine-tune model bằng SFTTrainer"""
-    from trl import SFTTrainer
-    from transformers import TrainingArguments
+    from trl import SFTTrainer, SFTConfig
     
     OUTPUT_DIR_TRAIN.mkdir(parents=True, exist_ok=True)
     
-    trainer = SFTTrainer(
-        model=model,
-        tokenizer=tokenizer,
-        train_dataset=dataset,
-        dataset_text_field="text",
+    sft_config = SFTConfig(
+        # SFT-specific
         max_seq_length=MAX_SEQ_LENGTH,
         dataset_num_proc=2,
         packing=True,  # Pack multiple samples vào 1 sequence
-        args=TrainingArguments(
-            per_device_train_batch_size=BATCH_SIZE,
-            gradient_accumulation_steps=GRAD_ACCUM_STEPS,
-            warmup_steps=WARMUP_STEPS,
-            num_train_epochs=NUM_EPOCHS,
-            learning_rate=LEARNING_RATE,
-            fp16=True,
-            logging_steps=5,
-            optim="adamw_8bit",
-            weight_decay=0.01,
-            lr_scheduler_type="cosine",
-            seed=42,
-            output_dir=str(OUTPUT_DIR_TRAIN),
-            save_strategy="epoch",
-            report_to="none",
-        ),
+        # Training
+        per_device_train_batch_size=BATCH_SIZE,
+        gradient_accumulation_steps=GRAD_ACCUM_STEPS,
+        warmup_steps=WARMUP_STEPS,
+        num_train_epochs=NUM_EPOCHS,
+        learning_rate=LEARNING_RATE,
+        fp16=True,
+        logging_steps=5,
+        optim="adamw_8bit",
+        weight_decay=0.01,
+        lr_scheduler_type="cosine",
+        seed=42,
+        output_dir=str(OUTPUT_DIR_TRAIN),
+        save_strategy="epoch",
+        report_to="none",
+    )
+    
+    trainer = SFTTrainer(
+        model=model,
+        processing_class=tokenizer,
+        train_dataset=dataset,
+        args=sft_config,
     )
     
     print("\n[TRAIN] Bat dau fine-tuning...")
@@ -222,13 +241,8 @@ def save_model(model, tokenizer):
     except Exception as e:
         print(f"[WARNING] Push to Hub loi: {e}")
     
-    # Merge model (optional - cho inference nhanh hơn)
-    try:
-        merged_path = OUTPUT_DIR_TRAIN / "merged_model"
-        model.save_pretrained_merged(str(merged_path), tokenizer)
-        print(f"[OK] Merged model saved: {merged_path}")
-    except Exception as e:
-        print(f"[WARNING] Merge loi (co the thieu RAM): {e}")
+    # Không hỗ trợ merge model tự động bằng PEFT khi đang load 4-bit,
+    # Phase 4 (RAG) sẽ tự động load base model + adapter riêng nên không cần thiết.
 
 
 # ══════════════════════════════════════════════════════════
