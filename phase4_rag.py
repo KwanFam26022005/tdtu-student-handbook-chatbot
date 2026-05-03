@@ -58,11 +58,11 @@ class DenseRetriever:
         import faiss
         from sentence_transformers import SentenceTransformer
         
-        print("  🔧 Loading FAISS index...")
+        print("  [INIT] Loading FAISS index...")
         self.index = faiss.read_index(str(index_path))
         self.chunks = chunks
         
-        print(f"  🔧 Loading embedding model: {embed_model_name}...")
+        print(f"  [INIT] Loading embedding model: {embed_model_name}...")
         self.embed_model = SentenceTransformer(embed_model_name)
     
     def search(self, query: str, top_k: int = TOP_K_RETRIEVAL) -> list[dict]:
@@ -90,7 +90,7 @@ class SparseRetriever:
     def __init__(self, chunks):
         from rank_bm25 import BM25Okapi
         
-        print("  🔧 Building BM25 index...")
+        print("  [INIT] Building BM25 index...")
         self.chunks = chunks
         
         # Tokenize đơn giản cho tiếng Việt
@@ -178,7 +178,7 @@ class CrossEncoderReranker:
     def __init__(self, model_name=RERANKER_MODEL):
         from sentence_transformers import CrossEncoder
         
-        print(f"  🔧 Loading reranker: {model_name}...")
+        print(f"  [INIT] Loading reranker: {model_name}...")
         self.model = CrossEncoder(model_name, max_length=512)
     
     def rerank(self, query: str, results: list[dict], top_k: int = TOP_K_RERANK) -> list[dict]:
@@ -209,7 +209,7 @@ class LLMGenerator:
         from transformers import AutoModelForCausalLM, AutoTokenizer
         import torch
         
-        print(f"  🔧 Loading LLM: {model_name}...")
+        print(f"  [INIT] Loading LLM: {model_name}...")
         
         self.tokenizer = AutoTokenizer.from_pretrained(model_name)
         self.model = AutoModelForCausalLM.from_pretrained(
@@ -222,14 +222,14 @@ class LLMGenerator:
         # Load LoRA adapter nếu có
         if lora_path and Path(lora_path).exists():
             from peft import PeftModel
-            print(f"  🔧 Loading LoRA adapter: {lora_path}...")
+            print(f"  [INIT] Loading LoRA adapter: {lora_path}...")
             self.model = PeftModel.from_pretrained(self.model, lora_path)
             self.is_finetuned = True
         else:
             self.is_finetuned = False
         
         self.model.eval()
-        print(f"  ✅ LLM ready! (Fine-tuned: {self.is_finetuned})")
+        print(f"  [OK] LLM ready! (Fine-tuned: {self.is_finetuned})")
     
     def generate(self, query: str, context: str = "") -> str:
         """Generate answer cho query, với hoặc không có RAG context"""
@@ -286,14 +286,14 @@ class RAGPipeline:
     """Pipeline RAG hoàn chỉnh"""
     
     def __init__(self, use_finetuned=False):
-        print("🚀 Khởi tạo RAG Pipeline...")
+        print("[INIT] Khoi tao RAG Pipeline...")
         print("=" * 60)
         
         # Load chunks
         chunks_path = PROCESSED_DIR / "chunks.json"
         with open(chunks_path, "r", encoding="utf-8") as f:
             self.chunks = json.load(f)
-        print(f"  📄 Loaded {len(self.chunks)} chunks")
+        print(f"  [INFO] Loaded {len(self.chunks)} chunks")
         
         # Dense retriever
         faiss_path = PROCESSED_DIR / "faiss_index.bin"
@@ -312,7 +312,7 @@ class RAGPipeline:
         lora_path = str(BASE_DIR / "outputs" / "finetune" / "lora_adapter") if use_finetuned else None
         self.llm = LLMGenerator(lora_path=lora_path)
         
-        print("\n✅ RAG Pipeline sẵn sàng!")
+        print("\n[OK] RAG Pipeline san sang!")
     
     def answer(self, query: str, use_rag=True) -> dict:
         """
@@ -364,12 +364,12 @@ def interactive_test():
     pipeline = RAGPipeline(use_finetuned=False)
     
     print("\n" + "=" * 60)
-    print("💬 CHATBOT SỔ TAY SINH VIÊN TDTU")
-    print("   Gõ 'quit' để thoát")
+    print("CHATBOT SO TAY SINH VIEN TDTU")
+    print("   Go 'quit' de thoat")
     print("=" * 60)
     
     while True:
-        query = input("\n🎓 Sinh viên hỏi: ").strip()
+        query = input("\nSinh vien hoi: ").strip()
         if query.lower() in ['quit', 'exit', 'q']:
             break
         
@@ -378,10 +378,10 @@ def interactive_test():
         
         result = pipeline.answer(query, use_rag=True)
         
-        print(f"\n🤖 Trợ lý: {result['answer']}")
-        print(f"\n📚 Nguồn: {', '.join(result['sources'][:3])}")
+        print(f"\n[ANSWER] {result['answer']}")
+        print(f"\n[SOURCE] {', '.join(result['sources'][:3])}")
         if result['sections']:
-            print(f"📋 Phần: {', '.join(s for s in result['sections'][:3] if s)}")
+            print(f"[SECTION] {', '.join(s for s in result['sections'][:3] if s)}")
 
 
 # ══════════════════════════════════════════════════════════

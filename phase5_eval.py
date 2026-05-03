@@ -94,13 +94,13 @@ def run_evaluation():
     # Load test set
     test_path = PROCESSED_DIR / "qa_test.json"
     if not test_path.exists():
-        print(f"❌ Chưa có {test_path}!")
+        print(f"[ERROR] Chua co {test_path}!")
         return
     
     with open(test_path, "r", encoding="utf-8") as f:
         test_set = json.load(f)
     
-    print(f"📄 Test set: {len(test_set)} câu hỏi\n")
+    print(f"[INFO] Test set: {len(test_set)} cau hoi\n")
     
     # Import RAG pipeline components
     from phase4_rag import RAGPipeline
@@ -116,7 +116,7 @@ def run_evaluation():
     
     for config_name, config in configs.items():
         print(f"\n{'='*60}")
-        print(f"⚙️  Config {config_name}: {config['label']}")
+        print(f"[CONFIG] Config {config_name}: {config['label']}")
         print(f"{'='*60}")
         
         # Init pipeline
@@ -138,7 +138,7 @@ def run_evaluation():
             time.sleep(0.1)  # Tránh overload GPU
         
         # Compute metrics
-        print(f"\n📊 Computing metrics for Config {config_name}...")
+        print(f"\n[STATS] Computing metrics for Config {config_name}...")
         
         bleu = compute_bleu(predictions, references)
         rouge_l = compute_rouge_l(predictions, references)
@@ -179,7 +179,7 @@ def run_evaluation():
     
     # ── Tổng kết ──
     print(f"\n\n{'='*70}")
-    print("📊 BẢNG TỔNG KẾT KẾT QUẢ")
+    print("[STATS] BANG TONG KET KET QUA")
     print(f"{'='*70}")
     print(f"{'Config':<8} {'Label':<30} {'BLEU':>8} {'ROUGE-L':>9} {'BERT-F1':>9} {'R@5':>8}")
     print("-" * 70)
@@ -194,7 +194,7 @@ def run_evaluation():
     with open(results_path, "w", encoding="utf-8") as f:
         json.dump(all_results, f, ensure_ascii=False, indent=2)
     
-    print(f"\n✅ Kết quả đã lưu: {results_path}")
+    print(f"\n[OK] Ket qua da luu: {results_path}")
     
     # Template cho human eval
     generate_human_eval_template(test_set)
@@ -225,7 +225,7 @@ def generate_human_eval_template(test_set):
                 "", "", "", "",  # Config D
             ])
     
-    print(f"📝 Human eval template: {template_path}")
+    print(f"[INFO] Human eval template: {template_path}")
     print("   Chấm điểm 1-5 cho mỗi tiêu chí: Accuracy, Completeness, Naturalness")
 
 

@@ -65,7 +65,7 @@ def load_model():
     """Load Qwen2.5-3B-Instruct với 4-bit quantization + LoRA"""
     from unsloth import FastLanguageModel
     
-    print("🔧 Loading base model...")
+    print("[INIT] Loading base model...")
     model, tokenizer = FastLanguageModel.from_pretrained(
         model_name=MODEL_NAME,
         max_seq_length=MAX_SEQ_LENGTH,
@@ -73,7 +73,7 @@ def load_model():
         load_in_4bit=LOAD_IN_4BIT,
     )
     
-    print("🔧 Adding LoRA adapters...")
+    print("[INIT] Adding LoRA adapters...")
     model = FastLanguageModel.get_peft_model(
         model,
         r=LORA_R,
@@ -88,7 +88,7 @@ def load_model():
     # In thông tin model
     trainable = sum(p.numel() for p in model.parameters() if p.requires_grad)
     total = sum(p.numel() for p in model.parameters())
-    print(f"✅ Model loaded!")
+    print(f"[OK] Model loaded!")
     print(f"   Trainable params: {trainable:,} / {total:,} ({100*trainable/total:.2f}%)")
     
     return model, tokenizer
@@ -103,14 +103,14 @@ def prepare_dataset(tokenizer):
     
     qa_train_path = BASE_DIR / "processed" / "qa_train.json"
     if not qa_train_path.exists():
-        print(f"❌ Không tìm thấy {qa_train_path}")
-        print("   → Chạy phase2_process.py trước!")
+        print(f"[ERROR] Khong tim thay {qa_train_path}")
+        print("   Chay phase2_process.py truoc!")
         return None
     
     with open(qa_train_path, "r", encoding="utf-8") as f:
         qa_pairs = json.load(f)
     
-    print(f"📄 Loaded {len(qa_pairs)} QA pairs")
+    print(f"[INFO] Loaded {len(qa_pairs)} QA pairs")
     
     # Chuyển sang chat format
     formatted_data = []
@@ -133,7 +133,7 @@ def prepare_dataset(tokenizer):
     from datasets import Dataset
     dataset = Dataset.from_list(formatted_data)
     
-    print(f"✅ Dataset: {len(dataset)} samples")
+    print(f"[OK] Dataset: {len(dataset)} samples")
     print(f"   Ví dụ: {dataset[0]['text'][:200]}...")
     
     return dataset
@@ -176,7 +176,7 @@ def train(model, tokenizer, dataset):
         ),
     )
     
-    print("\n🚀 Bắt đầu fine-tuning...")
+    print("\n[TRAIN] Bat dau fine-tuning...")
     print(f"   Epochs: {NUM_EPOCHS}")
     print(f"   Batch size (effective): {BATCH_SIZE * GRAD_ACCUM_STEPS}")
     print(f"   Learning rate: {LEARNING_RATE}")
@@ -189,7 +189,7 @@ def train(model, tokenizer, dataset):
     # Train
     stats = trainer.train()
     
-    print(f"\n✅ Training hoàn tất!")
+    print(f"\n[OK] Training hoan tat!")
     print(f"   Total steps: {stats.global_step}")
     print(f"   Training loss: {stats.training_loss:.4f}")
     
@@ -207,7 +207,7 @@ def save_model(model, tokenizer):
     lora_path = OUTPUT_DIR_TRAIN / "lora_adapter"
     model.save_pretrained(str(lora_path))
     tokenizer.save_pretrained(str(lora_path))
-    print(f"✅ LoRA adapter saved: {lora_path}")
+    print(f"[OK] LoRA adapter saved: {lora_path}")
     
     # Push lên HuggingFace Hub (optional)
     try:
@@ -215,20 +215,20 @@ def save_model(model, tokenizer):
         if hf_token:
             model.push_to_hub(HF_REPO_ID, token=hf_token)
             tokenizer.push_to_hub(HF_REPO_ID, token=hf_token)
-            print(f"✅ Pushed to HuggingFace Hub: {HF_REPO_ID}")
+            print(f"[OK] Pushed to HuggingFace Hub: {HF_REPO_ID}")
         else:
-            print("⚠️  HF_TOKEN không set, bỏ qua push to Hub")
+            print("[WARNING] HF_TOKEN khong set, bo qua push to Hub")
             print("   Đặt: export HF_TOKEN='hf_...'")
     except Exception as e:
-        print(f"⚠️  Push to Hub lỗi: {e}")
+        print(f"[WARNING] Push to Hub loi: {e}")
     
     # Merge model (optional - cho inference nhanh hơn)
     try:
         merged_path = OUTPUT_DIR_TRAIN / "merged_model"
         model.save_pretrained_merged(str(merged_path), tokenizer)
-        print(f"✅ Merged model saved: {merged_path}")
+        print(f"[OK] Merged model saved: {merged_path}")
     except Exception as e:
-        print(f"⚠️  Merge lỗi (có thể thiếu RAM): {e}")
+        print(f"[WARNING] Merge loi (co the thieu RAM): {e}")
 
 
 # ══════════════════════════════════════════════════════════
@@ -253,4 +253,4 @@ if __name__ == "__main__":
     # 4. Save
     save_model(model, tokenizer)
     
-    print("\n✅ Phase 3 hoàn tất! Tiếp theo: chạy phase4_rag.py")
+    print("\n[OK] Phase 3 hoan tat! Tiep theo: chay phase4_rag.py")
