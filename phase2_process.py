@@ -51,21 +51,27 @@ def clean_text(text: str) -> str:
     """
     Làm sạch text OCR:
     - Chuẩn hóa Unicode NFC
-    - Sửa lỗi OCR phổ biến
+    - Sửa lỗi OCR phổ biến (giữ nguyên ký tự pipe cho Markdown table)
+    - Loại bỏ tag [Con dấu], [Chữ ký] từ Phase 1 v2
     - Gộp dòng bị ngắt giữa chừng
     - Xóa header/footer lặp
-    - Giữ cấu trúc Điều/Khoản
+    - Giữ cấu trúc Điều/Khoản và bảng Markdown
     """
     # 1. Chuẩn hóa Unicode
     text = unicodedata.normalize("NFC", text)
-    
+
     # 2. Xóa ký tự điều khiển (giữ \n, \t)
     text = re.sub(r'[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]', '', text)
-    
+
     # 3. Xóa marker trang từ OCR output
     text = re.sub(r'---\s*Trang\s+\d+/\d+\s*---', '\n', text)
-    
-    # 4. Sửa lỗi OCR phổ biến cho tiếng Việt
+
+    # 4. Loại bỏ tag con dấu / chữ ký (sinh bởi Gemini Vision)
+    text = re.sub(r'\[Con dấu\]', '', text)
+    text = re.sub(r'\[Chữ ký\]', '', text)
+
+    # 5. Sửa lỗi OCR phổ biến cho tiếng Việt
+    #    LƯU Ý: KHÔNG thay '|' → 'l' vì Phase 1 v2 xuất bảng Markdown dùng '|'
     ocr_fixes = {
         'Ðiều': 'Điều',
         'Ðại': 'Đại',
@@ -75,51 +81,67 @@ def clean_text(text: str) -> str:
         'Ðược': 'Được',
         'Ðối': 'Đối',
         'Ðơn': 'Đơn',
-        'l1': 'l1',      # Không sửa số
-        '|': 'l',        # | thường bị nhầm với l
     }
     for wrong, right in ocr_fixes.items():
         text = text.replace(wrong, right)
-    
-    # 5. Gộp dòng bị ngắt giữa chừng
-    # (dòng kết thúc bằng chữ thường + dòng sau bắt đầu bằng chữ thường)
-    text = re.sub(r'([a-zàáạảãăắằặẳẵâấầậẩẫđèéẹẻẽêếềệểễìíịỉĩòóọỏõôốồộổỗơớờợởỡùúụủũưứừựửữỳýỵỷỹ,])\n([a-zàáạảãăắằặẳẵâấầậẩẫđèéẹẻẽêếềệểễìíịỉĩòóọỏõôốồộổỗơớờợởỡùúụủũưứừựửữỳýỵỷỹ])', r'\1 \2', text)
-    
-    # 6. Gộp khoảng trắng thừa (giữ \n)
+
+    # 6. Gộp dòng bị ngắt giữa chừng (CHỈ cho dòng text thường, BỎ QUA dòng bảng)
+    #    Dòng bảng Markdown bắt đầu bằng '|' — không gộp
+    lines = text.split('\n')
+    merged_lines = []
+    for i, line in enumerate(lines):
+        stripped = line.strip()
+        # Không gộp nếu dòng hiện tại hoặc dòng sau là dòng bảng Markdown
+        if (stripped.startswith('|') or
+                (i + 1 < len(lines) and lines[i + 1].strip().startswith('|'))):
+            merged_lines.append(line)
+        else:
+            merged_lines.append(line)
+    text = '\n'.join(merged_lines)
+    # Gộp dòng text thường bị ngắt giữa chừng
+    text = re.sub(
+        r'([a-zàáạảãăắằặẳẵâấầậẩẫđèéẹẻẽêếềệểễìíịỉĩòóọỏõôốồộổỗơớờợởỡùúụủũưứừựửữỳýỵỷỹ,])'
+        r'\n'
+        r'(?!\|)'
+        r'([a-zàáạảãăắằặẳẵâấầậẩẫđèéẹẻẽêếềệểễìíịỉĩòóọỏõôốồộổỗơớờợởỡùúụủũưứừựửữỳýỵỷỹ])',
+        r'\1 \2', text
+    )
+
+    # 7. Gộp khoảng trắng thừa (giữ \n)
     text = re.sub(r'[^\S\n]+', ' ', text)
-    
-    # 7. Xóa dòng trống liên tiếp (giữ tối đa 2)
+
+    # 8. Xóa dòng trống liên tiếp (giữ tối đa 2)
     text = re.sub(r'\n{3,}', '\n\n', text)
-    
-    # 8. Strip mỗi dòng
+
+    # 9. Strip mỗi dòng
     lines = [line.strip() for line in text.split('\n')]
     text = '\n'.join(lines)
-    
+
     return text.strip()
 
 
 def process_cleaning():
     """Cleaning tất cả file raw_text → clean_text"""
-    print("\n📝 PHASE 2A: Cleaning & Normalization")
+    print("\n[PHASE 2A] Cleaning & Normalization")
     print("=" * 60)
-    
+
     txt_files = sorted(RAW_TEXT_DIR.glob("*.txt"))
     if not txt_files:
-        print(f"❌ Không có file .txt nào trong {RAW_TEXT_DIR}")
-        print("   → Hãy chạy phase1_ocr.py trước!")
+        print(f"[ERROR] Không có file .txt nào trong {RAW_TEXT_DIR}")
+        print("   Hãy chạy phase1_ocr.py trước!")
         return False
-    
+
     for idx, txt_path in enumerate(txt_files, 1):
         raw = txt_path.read_text(encoding="utf-8")
         cleaned = clean_text(raw)
-        
+
         out_path = CLEAN_TEXT_DIR / txt_path.name
         out_path.write_text(cleaned, encoding="utf-8")
-        
+
         print(f"  [{idx}/{len(txt_files)}] {txt_path.name}: "
-              f"{len(raw):,} → {len(cleaned):,} ký tự")
-    
-    print(f"\n✅ Đã clean {len(txt_files)} file → {CLEAN_TEXT_DIR}")
+              f"{len(raw):,} -> {len(cleaned):,} ky tu")
+
+    print(f"\n[OK] Da clean {len(txt_files)} file -> {CLEAN_TEXT_DIR}")
     return True
 
 
@@ -127,12 +149,40 @@ def process_cleaning():
 # 2B. SEMANTIC CHUNKING
 # ══════════════════════════════════════════════════════════
 
+def _merge_table_paragraphs(paragraphs: list[str]) -> list[str]:
+    """
+    Merge contiguous Markdown table lines into a single paragraph block.
+    This prevents table rows from being split across different chunks.
+    """
+    merged = []
+    table_buffer = []
+
+    for para in paragraphs:
+        lines = para.strip().split('\n')
+        is_table = any(line.strip().startswith('|') for line in lines)
+
+        if is_table:
+            table_buffer.append(para)
+        else:
+            if table_buffer:
+                # Flush table block as single paragraph
+                merged.append('\n'.join(table_buffer))
+                table_buffer = []
+            merged.append(para)
+
+    if table_buffer:
+        merged.append('\n'.join(table_buffer))
+
+    return merged
+
+
 def semantic_chunk(text: str, source_name: str) -> list[dict]:
     """
-    Tách text thành chunks thông minh:
-    - Ưu tiên tách theo Điều/Khoản/Mục/Chương
-    - Fallback: tách theo paragraph + overlap
-    - Thêm context header vào mỗi chunk
+    Tach text thanh chunks thong minh:
+    - Uu tien tach theo Dieu/Khoan/Muc/Chuong
+    - Bao toan Markdown table (khong cat doi bang)
+    - Fallback: tach theo paragraph + overlap
+    - Them context header vao moi chunk
     """
     chunks = []
     
@@ -166,7 +216,7 @@ def semantic_chunk(text: str, source_name: str) -> list[dict]:
             
             # Nếu section quá dài, chia nhỏ theo paragraph
             if len(section_text) > CHUNK_SIZE * 2:
-                paragraphs = section_text.split('\n\n')
+                paragraphs = _merge_table_paragraphs(section_text.split('\n\n'))
                 buffer = ""
                 for para in paragraphs:
                     if len(buffer) + len(para) > CHUNK_SIZE * 1.5:
@@ -208,7 +258,7 @@ def semantic_chunk(text: str, source_name: str) -> list[dict]:
                 })
     else:
         # === Mode: Paragraph-based chunking with overlap ===
-        paragraphs = text.split('\n\n')
+        paragraphs = _merge_table_paragraphs(text.split('\n\n'))
         buffer = ""
         
         for para in paragraphs:
@@ -255,13 +305,13 @@ def semantic_chunk(text: str, source_name: str) -> list[dict]:
 
 
 def process_chunking():
-    """Chunking tất cả clean text → chunks.json"""
-    print("\n📝 PHASE 2B: Semantic Chunking")
+    """Chunking tat ca clean text -> chunks.json"""
+    print("\n[PHASE 2B] Semantic Chunking")
     print("=" * 60)
     
     txt_files = sorted(CLEAN_TEXT_DIR.glob("*.txt"))
     if not txt_files:
-        print("❌ Không có file clean text. Chạy cleaning trước!")
+        print("[ERROR] Khong co file clean text. Chay cleaning truoc!")
         return False
     
     all_chunks = []
@@ -284,7 +334,7 @@ def process_chunking():
     with open(chunks_path, "w", encoding="utf-8") as f:
         json.dump(all_chunks, f, ensure_ascii=False, indent=2)
     
-    print(f"\n✅ Tổng: {len(all_chunks)} chunks → {chunks_path}")
+    print(f"\n[OK] Tong: {len(all_chunks)} chunks -> {chunks_path}")
     
     # Thống kê
     lengths = [len(c["text"]) for c in all_chunks]
@@ -299,57 +349,57 @@ def process_chunking():
 # ══════════════════════════════════════════════════════════
 
 def build_vector_store():
-    """Embed chunks + lưu FAISS index"""
-    print("\n📝 PHASE 2C: Build Vector Store (FAISS + bge-m3)")
+    """Embed chunks + luu FAISS index"""
+    print("\n[PHASE 2C] Build Vector Store (FAISS + bge-m3)")
     print("=" * 60)
-    
+
     chunks_path = OUTPUT_DIR / "chunks.json"
     if not chunks_path.exists():
-        print("❌ Chưa có chunks.json. Chạy chunking trước!")
+        print("[ERROR] Chua co chunks.json. Chay chunking truoc!")
         return False
-    
+
     with open(chunks_path, "r", encoding="utf-8") as f:
         chunks = json.load(f)
-    
-    print(f"  📄 Loaded {len(chunks)} chunks")
-    
+
+    print(f"  Loaded {len(chunks)} chunks")
+
     # Embedding
     from sentence_transformers import SentenceTransformer
     import numpy as np
-    
-    print(f"  🔧 Loading embedding model: {EMBEDDING_MODEL}...")
+
+    print(f"  Loading embedding model: {EMBEDDING_MODEL}...")
     embed_model = SentenceTransformer(EMBEDDING_MODEL)
-    
-    # Embed tất cả chunks (dùng text_with_context để có ngữ cảnh)
+
+    # Embed tat ca chunks (dung text_with_context de co ngu canh)
     texts = [c["text_with_context"] for c in chunks]
-    
-    print(f"  ⚡ Đang embed {len(texts)} chunks...")
+
+    print(f"  Dang embed {len(texts)} chunks...")
     embeddings = embed_model.encode(
-        texts, 
-        show_progress_bar=True, 
+        texts,
+        show_progress_bar=True,
         batch_size=32,
         normalize_embeddings=True
     )
     # Build FAISS index
     import faiss
-    
+
     dim = embeddings.shape[1]
-    index = faiss.IndexFlatIP(dim)  # Inner product (cosine vì đã normalize)
+    index = faiss.IndexFlatIP(dim)  # Inner product (cosine vi da normalize)
     index.add(np.array(embeddings).astype('float32'))
-    
-    # Lưu
+
+    # Luu
     faiss_path = OUTPUT_DIR / "faiss_index.bin"
     faiss.write_index(index, str(faiss_path))
-    
-    # Lưu metadata mapping
-    metadata = [{"id": c["id"], "source": c["source"], "section": c["section"], 
+
+    # Luu metadata mapping
+    metadata = [{"id": c["id"], "source": c["source"], "section": c["section"],
                  "chapter": c["chapter"]} for c in chunks]
     meta_path = OUTPUT_DIR / "chunks_metadata.json"
     with open(meta_path, "w", encoding="utf-8") as f:
         json.dump(metadata, f, ensure_ascii=False, indent=2)
-    
-    print(f"\n✅ FAISS index: {faiss_path} (dim={dim}, n={index.ntotal})")
-    print(f"✅ Metadata: {meta_path}")
+
+    print(f"\n[OK] FAISS index: {faiss_path} (dim={dim}, n={index.ntotal})")
+    print(f"[OK] Metadata: {meta_path}")
     return True
 
 
@@ -492,21 +542,21 @@ def generate_qa_api(chunks: list[dict]) -> tuple[list[dict], set]:
     
     api_key = os.environ.get("GOOGLE_API_KEY", "")
     if not api_key:
-        print("   ⚠️  Không có GOOGLE_API_KEY → chỉ dùng template")
+        print("   [WARNING] Khong co GOOGLE_API_KEY -> chi dung template")
         return [], set()
-    
+
     genai.configure(api_key=api_key)
-    
+
     MODEL_CHAIN = [
         "gemini-2.5-flash",
         "gemini-2.5-flash-lite",
         "gemini-2.0-flash",
     ]
-    
+
     current_model_idx = 0
     model = genai.GenerativeModel(MODEL_CHAIN[current_model_idx])
-    print(f"   🤖 Model: {MODEL_CHAIN[current_model_idx]}")
-    
+    print(f"   [MODEL] {MODEL_CHAIN[current_model_idx]}")
+
     # Resume logic
     progress_path = OUTPUT_DIR / "qa_progress.json"
     if progress_path.exists():
@@ -514,13 +564,13 @@ def generate_qa_api(chunks: list[dict]) -> tuple[list[dict], set]:
             progress_data = json.load(f)
         all_qa = progress_data.get("qa_pairs", [])
         done_ids = set(progress_data.get("done_chunk_ids", []))
-        print(f"   📂 Resume: {len(all_qa)} QA từ {len(done_ids)} chunks")
+        print(f"   [RESUME] {len(all_qa)} QA tu {len(done_ids)} chunks")
     else:
         all_qa = []
         done_ids = set()
-    
+
     pending = [c for c in chunks if c["id"] not in done_ids]
-    print(f"   🧩 Còn {len(pending)} chunks cần API")
+    print(f"   [PENDING] Con {len(pending)} chunks can API")
     
     if not pending:
         return all_qa, done_ids
@@ -572,11 +622,11 @@ Hãy tạo 3-5 cặp câu hỏi-trả lời. CHỈ trả về JSON array, KHÔNG
                         all_qa.extend(valid)
                         done_ids.add(chunk["id"])
                         consecutive_429 = 0
-                        print(f"   ✅ {chunk['id']}: {len(valid)} QA (tổng: {len(all_qa)})")
+                        print(f"   [OK] {chunk['id']}: {len(valid)} QA (tong: {len(all_qa)})")
                         success = True
                         break
-                
-                print(f"   ⚠️  {chunk['id']}: JSON parse fail (lần {attempt+1})")
+
+                print(f"   [WARNING] {chunk['id']}: JSON parse fail (lan {attempt+1})")
                 done_ids.add(chunk["id"])
                 success = True
                 break
@@ -594,33 +644,33 @@ Hãy tạo 3-5 cặp câu hỏi-trả lời. CHỈ trả về JSON array, KHÔNG
                         current_model_idx += 1
                         if current_model_idx < len(MODEL_CHAIN):
                             nm = MODEL_CHAIN[current_model_idx]
-                            print(f"\n   🔄 Chuyển model: {nm}")
+                            print(f"\n   [SWITCH] Chuyen model: {nm}")
                             model = genai.GenerativeModel(nm)
                             consecutive_429 = 0
                             wait = 10
                         else:
-                            print(f"\n   ⏸️  Hết quota. Lưu {len(all_qa)} QA từ API.")
+                            print(f"\n   [PAUSE] Het quota. Luu {len(all_qa)} QA tu API.")
                             with open(progress_path, "w", encoding="utf-8") as f:
                                 json.dump({"qa_pairs": all_qa,
                                           "done_chunk_ids": list(done_ids)},
                                          f, ensure_ascii=False, indent=2)
                             return all_qa, done_ids
                     
-                    print(f"   ⏳ 429 (lần {attempt+1}). Chờ {wait:.0f}s...")
+                    print(f"   [WAIT] 429 (lan {attempt+1}). Cho {wait:.0f}s...")
                     time.sleep(wait)
                 else:
-                    print(f"   ❌ {chunk['id']}: {err[:80]}")
+                    print(f"   [ERROR] {chunk['id']}: {err[:80]}")
                     time.sleep(5)
         
         if not success:
-            print(f"   ⏭️  Skip {chunk['id']}")
+            print(f"   [SKIP] Skip {chunk['id']}")
         
         # Save progress mỗi 10 chunks
         if len(done_ids) % 10 == 0 and len(done_ids) > 0:
             with open(progress_path, "w", encoding="utf-8") as f:
                 json.dump({"qa_pairs": all_qa, "done_chunk_ids": list(done_ids)},
                          f, ensure_ascii=False, indent=2)
-            print(f"   💾 Saved: {len(all_qa)} QA / {len(done_ids)} chunks")
+            print(f"   [SAVE] Saved: {len(all_qa)} QA / {len(done_ids)} chunks")
         
         time.sleep(6)
     
@@ -634,52 +684,51 @@ Hãy tạo 3-5 cặp câu hỏi-trả lời. CHỈ trả về JSON array, KHÔNG
 
 def process_qa_generation():
     """
-    Sinh QA pairs: API trước, template bổ sung.
-    Đảm bảo ≥300 QA pairs cho training.
+    Sinh QA pairs: API truoc, template bo sung.
+    Dam bao >=300 QA pairs cho training.
     """
-    print("\n📝 PHASE 2D: Generate QA Pairs")
+    print("\n[PHASE 2D] Generate QA Pairs")
     print("=" * 60)
-    
+
     chunks_path = OUTPUT_DIR / "chunks.json"
     if not chunks_path.exists():
-        print("❌ Chưa có chunks.json!")
+        print("[ERROR] Chua co chunks.json!")
         return False
-    
+
     with open(chunks_path, "r", encoding="utf-8") as f:
         chunks = json.load(f)
-    
-    print(f"  📄 {len(chunks)} chunks")
-    print(f"  🎯 Mục tiêu: ≥300 QA pairs cho training")
-    print(f"  📋 Chiến lược: API (best-effort) + Template (fallback)\n")
-    
-    # ── Bước 1: Thử API ──
-    print("  ── Bước 1: Gemini API ──")
+
+    print(f"  {len(chunks)} chunks")
+    print(f"  Muc tieu: >=300 QA pairs cho training")
+    print(f"  Chien luoc: API (best-effort) + Template (fallback)\n")
+
+    # -- Buoc 1: Thu API --
+    print("  -- Buoc 1: Gemini API --")
     api_qa, api_done_ids = generate_qa_api(chunks)
-    print(f"\n  📊 API: {len(api_qa)} QA từ {len(api_done_ids)} chunks")
-    
-    # ── Bước 2: Template cho chunks còn lại ──
-    print("\n  ── Bước 2: Template-based generation ──")
+    print(f"\n  [STATS] API: {len(api_qa)} QA tu {len(api_done_ids)} chunks")
+
+    # -- Buoc 2: Template cho chunks con lai --
+    print("\n  -- Buoc 2: Template-based generation --")
     template_qa = []
     template_count = 0
     for chunk in chunks:
         if chunk["id"] in api_done_ids:
-            continue  # Đã có từ API
+            continue
         tqa = generate_qa_template(chunk)
         if tqa:
             template_qa.extend(tqa)
             template_count += 1
-    
-    print(f"  📊 Template: {len(template_qa)} QA từ {template_count} chunks")
-    
-    # ── Bước 3: Nếu vẫn thiếu, sinh template cho TẤT CẢ chunks ──
+
+    print(f"  [STATS] Template: {len(template_qa)} QA tu {template_count} chunks")
+
+    # -- Buoc 3: Neu van thieu, sinh template cho TAT CA chunks --
     all_qa = api_qa + template_qa
     if len(all_qa) < 300:
-        print(f"\n  ⚠️  Mới có {len(all_qa)} QA, cần thêm. Sinh template cho chunks đã có API...")
+        print(f"\n  [WARNING] Moi co {len(all_qa)} QA, can them. Sinh template cho chunks da co API...")
         for chunk in chunks:
             if chunk["id"] not in api_done_ids:
-                continue  # Đã sinh template ở bước 2
+                continue
             tqa = generate_qa_template(chunk)
-            # Chỉ thêm QA không trùng
             existing_questions = {q["question"] for q in all_qa}
             for qa in tqa:
                 if qa["question"] not in existing_questions:
@@ -687,56 +736,72 @@ def process_qa_generation():
                     existing_questions.add(qa["question"])
             if len(all_qa) >= 350:
                 break
-    
+
     if not all_qa:
-        print("❌ Không sinh được QA nào!")
+        print("[ERROR] Khong sinh duoc QA nao!")
         return False
-    
-    # ── Lưu kết quả ──
+
+    # -- Luu ket qua --
     qa_all_path = OUTPUT_DIR / "qa_all.json"
     with open(qa_all_path, "w", encoding="utf-8") as f:
         json.dump(all_qa, f, ensure_ascii=False, indent=2)
-    
+
     # Split train/test
     import random
     random.seed(42)
     random.shuffle(all_qa)
-    
+
     test_size = min(50, len(all_qa) // 5)
     test_set = all_qa[:test_size]
     train_set = all_qa[test_size:]
-    
+
     train_path = OUTPUT_DIR / "qa_train.json"
     test_path = OUTPUT_DIR / "qa_test.json"
-    
+
     with open(train_path, "w", encoding="utf-8") as f:
         json.dump(train_set, f, ensure_ascii=False, indent=2)
     with open(test_path, "w", encoding="utf-8") as f:
         json.dump(test_set, f, ensure_ascii=False, indent=2)
-    
-    print(f"\n✅ Tổng QA: {len(all_qa)}")
-    print(f"   Train: {len(train_set)} → {train_path}")
-    print(f"   Test:  {len(test_set)} → {test_path}")
-    
-    # Thống kê
+
+    print(f"\n[OK] Tong QA: {len(all_qa)}")
+    print(f"   Train: {len(train_set)} -> {train_path}")
+    print(f"   Test:  {len(test_set)} -> {test_path}")
+
+    # Thong ke
     from collections import Counter
     types = Counter(qa.get("type", "unknown") for qa in all_qa)
     sources = Counter(qa.get("generated_by", "unknown") for qa in all_qa)
-    print(f"   Phân bố type: {dict(types)}")
-    print(f"   Nguồn: {dict(sources)}")
-    
+    print(f"   Phan bo type: {dict(types)}")
+    print(f"   Nguon: {dict(sources)}")
+
     return True
 
 
 
-    ]
-    
-    current_model_idx = 0
-    model = genai.GenerativeModel(MODEL_CHAIN[current_model_idx])
-    print(f"   🤖 Model hiện tại: {MODEL_CHAIN[current_model_idx]}")
-    
-    # ── Resume logic: load progress nếu có ──
-    progress_path = OUTPUT_DIR / "qa_progress.json"
+# ══════════════════════════════════════════════════════════
+# MAIN
+# ══════════════════════════════════════════════════════════
+if __name__ == "__main__":
+    print("+" + "=" * 58 + "+")
+    print("|   PHASE 2 - Data Processing & QA Generation            |")
+    print("+" + "=" * 58 + "+")
+
+    # 2A: Clean
+    if not process_cleaning():
+        sys.exit(1)
+
+    # 2B: Chunk
+    if not process_chunking():
+        sys.exit(1)
+
+    # 2C: Vector Store (can GPU cho embedding nhanh)
+    build_vector_store()
+
+    # 2D: QA Generation (can GOOGLE_API_KEY)
+    process_qa_generation()
+
+    print("\n[OK] Phase 2 hoan tat! Tiep theo: chay phase3_finetune.py")
+
     if progress_path.exists():
         with open(progress_path, "r", encoding="utf-8") as f:
             progress_data = json.load(f)
