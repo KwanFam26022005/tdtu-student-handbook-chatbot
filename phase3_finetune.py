@@ -18,6 +18,7 @@ Chạy:
 
 import os
 import json
+import shutil
 from pathlib import Path
 
 # ══════════════════════════════════════════════════════════
@@ -48,7 +49,10 @@ WARMUP_STEPS = 10
 
 # Output
 OUTPUT_DIR_TRAIN = BASE_DIR / "outputs" / "finetune"
-HF_REPO_ID = "KwanFam26022005/tdtu-qwen2.5-3b-lora"  # Đổi thành repo của bạn
+HF_REPO_ID = "KwanFam26022005/tdtu-qwen2.5-3b-lora"
+
+# Google Drive backup (tự động sao lưu sau mỗi epoch)
+DRIVE_BACKUP_DIR = Path("/content/drive/MyDrive/TDTU_Chatbot_Data/finetune")
 
 # System prompt cho chatbot
 SYSTEM_PROMPT = """Bạn là trợ lý AI chuyên về quy chế và sổ tay sinh viên Trường Đại học Tôn Đức Thắng (TDTU).
@@ -164,7 +168,39 @@ def prepare_dataset(tokenizer):
 
 
 # ══════════════════════════════════════════════════════════
-# 3. TRAIN
+# 3. DRIVE BACKUP CALLBACK
+# ══════════════════════════════════════════════════════════
+
+class DriveBackupCallback:
+    """Tự động copy checkpoint lên Google Drive sau mỗi epoch"""
+    
+    def on_save(self, args, state, control, **kwargs):
+        """Được gọi sau mỗi lần save checkpoint"""
+        if not DRIVE_BACKUP_DIR.parent.exists():
+            print("[WARNING] Google Drive chua mount, bo qua backup")
+            return
+        
+        try:
+            DRIVE_BACKUP_DIR.mkdir(parents=True, exist_ok=True)
+            
+            # Tìm checkpoint mới nhất
+            checkpoint_dirs = sorted(
+                Path(args.output_dir).glob("checkpoint-*"),
+                key=lambda x: x.stat().st_mtime
+            )
+            if checkpoint_dirs:
+                latest = checkpoint_dirs[-1]
+                dest = DRIVE_BACKUP_DIR / latest.name
+                if dest.exists():
+                    shutil.rmtree(str(dest))
+                shutil.copytree(str(latest), str(dest))
+                print(f"[BACKUP] Saved to Drive: {dest}")
+        except Exception as e:
+            print(f"[WARNING] Drive backup loi: {e}")
+
+
+# ══════════════════════════════════════════════════════════
+# 4. TRAIN
 # ══════════════════════════════════════════════════════════
 
 def train(model, tokenizer, dataset):
@@ -198,13 +234,20 @@ def train(model, tokenizer, dataset):
         report_to="none",
     )
     
-    # Auto-detect API: trl mới dùng processing_class, cũ dùng tokenizer
+    # Auto-detect API + thêm callback backup Drive
+    from transformers import TrainerCallback
+    
+    class _DriveBackup(TrainerCallback):
+        def on_save(self, args, state, control, **kwargs):
+            DriveBackupCallback().on_save(args, state, control, **kwargs)
+    
     try:
         trainer = SFTTrainer(
             model=model,
             processing_class=tokenizer,
             train_dataset=dataset,
             args=training_args,
+            callbacks=[_DriveBackup()],
         )
     except TypeError:
         trainer = SFTTrainer(
@@ -212,6 +255,7 @@ def train(model, tokenizer, dataset):
             tokenizer=tokenizer,
             train_dataset=dataset,
             args=training_args,
+            callbacks=[_DriveBackup()],
         )
     
     print("\n[TRAIN] Bat dau fine-tuning...")
@@ -224,8 +268,25 @@ def train(model, tokenizer, dataset):
     if torch.cuda.is_available():
         print(f"   GPU Memory: {torch.cuda.memory_allocated()/1e9:.2f} GB used")
     
-    # Train
-    stats = trainer.train()
+    # Resume từ checkpoint nếu có
+    resume_dir = None
+    checkpoints = sorted(OUTPUT_DIR_TRAIN.glob("checkpoint-*")) if OUTPUT_DIR_TRAIN.exists() else []
+    if not checkpoints:
+        # Thử tìm trên Drive
+        drive_checkpoints = sorted(DRIVE_BACKUP_DIR.glob("checkpoint-*")) if DRIVE_BACKUP_DIR.exists() else []
+        if drive_checkpoints:
+            latest_drive = drive_checkpoints[-1]
+            local_copy = OUTPUT_DIR_TRAIN / latest_drive.name
+            if not local_copy.exists():
+                shutil.copytree(str(latest_drive), str(local_copy))
+                print(f"[RESUME] Restored checkpoint from Drive: {latest_drive.name}")
+            resume_dir = str(local_copy)
+    else:
+        resume_dir = str(checkpoints[-1])
+        print(f"[RESUME] Found local checkpoint: {checkpoints[-1].name}")
+    
+    # Train (resume nếu có checkpoint)
+    stats = trainer.train(resume_from_checkpoint=resume_dir)
     
     print(f"\n[OK] Training hoan tat!")
     print(f"   Total steps: {stats.global_step}")
@@ -262,6 +323,17 @@ def save_model(model, tokenizer):
     
     # Không hỗ trợ merge model tự động bằng PEFT khi đang load 4-bit,
     # Phase 4 (RAG) sẽ tự động load base model + adapter riêng nên không cần thiết.
+    
+    # Backup LoRA adapter lên Drive
+    try:
+        if DRIVE_BACKUP_DIR.parent.exists():
+            drive_lora = DRIVE_BACKUP_DIR / "lora_adapter"
+            if drive_lora.exists():
+                shutil.rmtree(str(drive_lora))
+            shutil.copytree(str(lora_path), str(drive_lora))
+            print(f"[BACKUP] LoRA adapter saved to Drive: {drive_lora}")
+    except Exception as e:
+        print(f"[WARNING] Drive backup loi: {e}")
 
 
 # ══════════════════════════════════════════════════════════
