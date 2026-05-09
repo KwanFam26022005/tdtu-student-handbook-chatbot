@@ -229,20 +229,26 @@ def train(model, tokenizer, dataset, eval_dataset=None):
         warmup_steps=WARMUP_STEPS,
         num_train_epochs=NUM_EPOCHS,
         learning_rate=LEARNING_RATE,
-        fp16=False,           # KHÔNG dùng fp16 với bitsandbytes 4-bit
-        bf16=use_bf16,        # bf16 nếu GPU hỗ trợ (không dùng GradScaler)
+        fp16=False,           
+        bf16=use_bf16,        
         logging_steps=5,
         optim="adamw_8bit",
         weight_decay=0.01,
         lr_scheduler_type="cosine",
         seed=42,
         output_dir=str(OUTPUT_DIR_TRAIN),
-        save_strategy="epoch",
-        save_total_limit=SAVE_TOTAL_LIMIT,           # Fix B: cap disk usage
-        eval_strategy="epoch",                       # Fix A: eval mỗi epoch
-        load_best_model_at_end=True,                  # Fix A: load best khi xong
-        metric_for_best_model="eval_loss",            # Fix A: best = lowest loss
-        greater_is_better=False,                      # Fix A: lower loss = better
+        
+        # --- CÁC DÒNG CẦN CHỈNH SỬA BẮT ĐẦU TỪ ĐÂY ---
+        save_strategy="steps",                       # Đổi từ "epoch" sang "steps"
+        save_steps=50,                               # Lưu checkpoint mỗi 50 steps
+        save_total_limit=SAVE_TOTAL_LIMIT,           # Vẫn giữ nguyên (giữ 2 checkpoint gần nhất)
+        eval_strategy="steps",                       # Đổi đồng bộ với save_strategy
+        eval_steps=50,                               # Đánh giá mỗi 50 steps
+        load_best_model_at_end=True,                  
+        metric_for_best_model="eval_loss",            
+        greater_is_better=False,                      
+        # --- KẾT THÚC PHẦN CHỈNH SỬA ---
+        
         report_to="none",
     )
     

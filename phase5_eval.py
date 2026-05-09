@@ -18,8 +18,10 @@ Cài đặt:
 
 import json
 import time
+import csv
 import numpy as np
 from pathlib import Path
+from datetime import datetime
 from collections import defaultdict
 
 # ══════════════════════════════════════════════════════════
@@ -120,6 +122,7 @@ def run_evaluation():
         print(f"{'='*60}")
         
         # Init pipeline
+        config_start_time = time.time()
         pipeline = RAGPipeline(use_finetuned=config["use_finetuned"])
         
         predictions = []
@@ -137,6 +140,8 @@ def run_evaluation():
             
             time.sleep(0.1)  # Tránh overload GPU
         
+        config_elapsed = time.time() - config_start_time
+        
         # Compute metrics
         print(f"\n[STATS] Computing metrics for Config {config_name}...")
         
@@ -150,6 +155,8 @@ def run_evaluation():
             "bleu": round(bleu, 2),
             "rouge_l": round(rouge_l, 2),
             "bertscore_f1": round(bert_f1, 2),
+            "time_seconds": round(config_elapsed, 1),
+            "num_samples": len(test_set),
         }
         
         # Recall@5 chỉ cho configs có RAG
@@ -195,17 +202,32 @@ def run_evaluation():
         json.dump(all_results, f, ensure_ascii=False, indent=2)
     
     print(f"\n[OK] Ket qua da luu: {results_path}")
-    
-    # Template cho human eval
+
+    # --- Lưu CSV bảng so sánh ---
+    save_comparison_csv(all_results)
+
+    # --- Lưu metadata ---
+    save_run_metadata(all_results, test_set)
+
+    # --- Sinh biểu đồ ---
+    generate_charts(all_results)
+
+    # --- Template human eval (auto-fill predictions) ---
     generate_human_eval_template(test_set)
 
 
 def generate_human_eval_template(test_set):
-    """Tạo template CSV cho human evaluation 50 câu"""
-    import csv
-    
+    """Tạo template CSV cho human evaluation 50 câu, auto-fill predictions nếu có."""
     template_path = RESULTS_DIR / "human_eval_template.csv"
-    
+
+    # Try to load predictions from saved files
+    config_preds = {}
+    for cfg in ["A", "B", "C", "D"]:
+        pred_path = RESULTS_DIR / f"predictions_{cfg}.json"
+        if pred_path.exists():
+            with open(pred_path, "r", encoding="utf-8") as f:
+                config_preds[cfg] = json.load(f)
+
     with open(template_path, "w", newline="", encoding="utf-8-sig") as f:
         writer = csv.writer(f)
         writer.writerow([
@@ -215,18 +237,135 @@ def generate_human_eval_template(test_set):
             "Pred_C", "Score_C_Accuracy", "Score_C_Completeness", "Score_C_Naturalness",
             "Pred_D", "Score_D_Accuracy", "Score_D_Completeness", "Score_D_Naturalness",
         ])
-        
+
         for i, qa in enumerate(test_set[:50], 1):
-            writer.writerow([
-                i, qa["question"], qa["answer"],
-                "", "", "", "",  # Config A
-                "", "", "", "",  # Config B
-                "", "", "", "",  # Config C
-                "", "", "", "",  # Config D
-            ])
-    
+            row = [i, qa["question"], qa["answer"]]
+            for cfg in ["A", "B", "C", "D"]:
+                if cfg in config_preds and i - 1 < len(config_preds[cfg]):
+                    pred_text = config_preds[cfg][i - 1].get("prediction", "")
+                else:
+                    pred_text = ""
+                row.extend([pred_text, "", "", ""])  # pred + 3 empty score columns
+            writer.writerow(row)
+
     print(f"[INFO] Human eval template: {template_path}")
     print("   Chấm điểm 1-5 cho mỗi tiêu chí: Accuracy, Completeness, Naturalness")
+
+
+def save_comparison_csv(all_results: dict):
+    """Export comparison table as CSV for reports/slides."""
+    csv_path = RESULTS_DIR / "comparison_table.csv"
+
+    with open(csv_path, "w", newline="", encoding="utf-8-sig") as f:
+        writer = csv.writer(f)
+        writer.writerow(["Config", "Label", "BLEU", "ROUGE-L", "BERTScore_F1",
+                         "Recall@5", "Time(s)", "Num_Samples"])
+        for name in ["A", "B", "C", "D"]:
+            m = all_results[name]
+            writer.writerow([
+                m["config"], m["label"],
+                m["bleu"], m["rouge_l"], m["bertscore_f1"],
+                m.get("recall_at_5", "N/A"),
+                m.get("time_seconds", "N/A"),
+                m.get("num_samples", ""),
+            ])
+
+    print(f"[OK] Comparison CSV: {csv_path}")
+
+
+def save_run_metadata(all_results: dict, test_set: list):
+    """Save run metadata: timestamps, config, dataset info."""
+    meta = {
+        "run_timestamp": datetime.now().isoformat(),
+        "test_set_size": len(test_set),
+        "test_set_path": str(PROCESSED_DIR / "qa_test.json"),
+        "configs": {
+            name: {
+                "label": r["label"],
+                "time_seconds": r.get("time_seconds"),
+            }
+            for name, r in all_results.items()
+        },
+        "total_time_seconds": sum(
+            r.get("time_seconds", 0) for r in all_results.values()
+            if isinstance(r.get("time_seconds"), (int, float))
+        ),
+        "metrics_computed": ["BLEU", "ROUGE-L", "BERTScore_F1", "Recall@5"],
+    }
+
+    meta_path = RESULTS_DIR / "run_metadata.json"
+    with open(meta_path, "w", encoding="utf-8") as f:
+        json.dump(meta, f, ensure_ascii=False, indent=2)
+
+    print(f"[OK] Run metadata: {meta_path}")
+
+
+def generate_charts(all_results: dict):
+    """Generate bar chart comparing 4 configs across metrics."""
+    try:
+        import matplotlib
+        matplotlib.use("Agg")  # Non-interactive backend (works on server/Colab)
+        import matplotlib.pyplot as plt
+    except ImportError:
+        print("[WARN] matplotlib not installed. Skip chart generation.")
+        print("   Install: pip install matplotlib")
+        return
+
+    configs = ["A", "B", "C", "D"]
+    labels = [all_results[c]["label"] for c in configs]
+    metrics = ["bleu", "rouge_l", "bertscore_f1"]
+    metric_labels = ["BLEU", "ROUGE-L", "BERTScore F1"]
+
+    x = np.arange(len(configs))
+    width = 0.22
+
+    fig, ax = plt.subplots(figsize=(10, 6))
+
+    for i, (metric, mlabel) in enumerate(zip(metrics, metric_labels)):
+        values = [float(all_results[c].get(metric, 0)) for c in configs]
+        bars = ax.bar(x + i * width, values, width, label=mlabel)
+        # Add value labels on bars
+        for bar, val in zip(bars, values):
+            ax.text(bar.get_x() + bar.get_width() / 2, bar.get_height() + 0.5,
+                    f"{val:.1f}", ha="center", va="bottom", fontsize=8)
+
+    ax.set_xlabel("Configuration")
+    ax.set_ylabel("Score")
+    ax.set_title("So s\u00e1nh 4 C\u1ea5u h\u00ecnh RAG - BLEU / ROUGE-L / BERTScore")
+    ax.set_xticks(x + width)
+    ax.set_xticklabels([f"{c}\n{l}" for c, l in zip(configs, labels)],
+                        fontsize=8)
+    ax.legend()
+    ax.set_ylim(0, max(
+        max(float(all_results[c].get(m, 0)) for c in configs)
+        for m in metrics
+    ) * 1.2 + 1)
+    plt.tight_layout()
+
+    chart_path = RESULTS_DIR / "comparison_chart.png"
+    fig.savefig(str(chart_path), dpi=150)
+    plt.close(fig)
+    print(f"[OK] Chart saved: {chart_path}")
+
+    # --- Recall@5 chart (only B & D) ---
+    rag_configs = [c for c in configs if all_results[c].get("recall_at_5") != "N/A"]
+    if rag_configs:
+        fig2, ax2 = plt.subplots(figsize=(6, 4))
+        recall_vals = [float(all_results[c]["recall_at_5"]) for c in rag_configs]
+        recall_labels = [f"{c}: {all_results[c]['label']}" for c in rag_configs]
+        bars = ax2.bar(recall_labels, recall_vals, color=["#4C78A8", "#E45756"])
+        for bar, val in zip(bars, recall_vals):
+            ax2.text(bar.get_x() + bar.get_width() / 2, bar.get_height() + 0.5,
+                     f"{val:.1f}%", ha="center", va="bottom", fontsize=10)
+        ax2.set_ylabel("Recall@5 (%)")
+        ax2.set_title("Retrieval Quality: Recall@5")
+        ax2.set_ylim(0, 105)
+        plt.tight_layout()
+
+        recall_path = RESULTS_DIR / "recall_chart.png"
+        fig2.savefig(str(recall_path), dpi=150)
+        plt.close(fig2)
+        print(f"[OK] Recall chart: {recall_path}")
 
 
 # ══════════════════════════════════════════════════════════
