@@ -515,7 +515,7 @@ Hãy trả lời dựa trên ngữ cảnh trên."""
         with torch.no_grad():
             outputs = self.model.generate(
                 **inputs,
-                max_new_tokens=512,
+                max_new_tokens=256,
                 temperature=0.3,
                 top_p=0.9,
                 do_sample=True,
@@ -568,6 +568,24 @@ class RAGPipeline:
         self.compressor = ContextualCompressor()
 
         print("\n[OK] RAG Pipeline (Enhanced) san sang!")
+
+    def cleanup(self):
+        """Giải phóng GPU memory — gọi giữa các config trên Colab."""
+        import torch
+        import gc
+
+        # Delete GPU-heavy components
+        if hasattr(self, 'llm'):
+            del self.llm
+        if hasattr(self, 'reranker'):
+            del self.reranker
+        if hasattr(self, 'dense'):
+            del self.dense
+
+        gc.collect()
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+        print("[CLEANUP] GPU memory freed.")
 
     def answer(self, query: str, use_rag=True) -> dict:
         """

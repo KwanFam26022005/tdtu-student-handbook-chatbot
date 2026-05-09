@@ -106,83 +106,104 @@ def run_evaluation():
     
     # Import RAG pipeline components
     from phase4_rag import RAGPipeline
+    import gc
+    import torch
     
-    configs = {
-        "A": {"use_rag": False, "use_finetuned": False, "label": "LLM gốc, không RAG"},
-        "B": {"use_rag": True,  "use_finetuned": False, "label": "LLM gốc + RAG"},
-        "C": {"use_rag": False, "use_finetuned": True,  "label": "Fine-tuned, không RAG"},
-        "D": {"use_rag": True,  "use_finetuned": True,  "label": "Fine-tuned + RAG"},
-    }
+    # Group configs by model type to minimize reloads:
+    # Group 1: base model (A, B)  |  Group 2: fine-tuned (C, D)
+    config_groups = [
+        [
+            ("A", {"use_rag": False, "use_finetuned": False, "label": "LLM gốc, không RAG"}),
+            ("B", {"use_rag": True,  "use_finetuned": False, "label": "LLM gốc + RAG"}),
+        ],
+        [
+            ("C", {"use_rag": False, "use_finetuned": True,  "label": "Fine-tuned, không RAG"}),
+            ("D", {"use_rag": True,  "use_finetuned": True,  "label": "Fine-tuned + RAG"}),
+        ],
+    ]
     
     all_results = {}
     
-    for config_name, config in configs.items():
-        print(f"\n{'='*60}")
-        print(f"[CONFIG] Config {config_name}: {config['label']}")
-        print(f"{'='*60}")
+    for group in config_groups:
+        # Load pipeline ONCE per group (same model)
+        use_ft = group[0][1]["use_finetuned"]
+        print(f"\n{'#'*60}")
+        print(f"  Loading pipeline (fine-tuned={use_ft})...")
+        print(f"{'#'*60}")
+        pipeline = RAGPipeline(use_finetuned=use_ft)
         
-        # Init pipeline
-        config_start_time = time.time()
-        pipeline = RAGPipeline(use_finetuned=config["use_finetuned"])
-        
-        predictions = []
-        references = []
-        retrieved_sources = []
-        
-        for i, qa in enumerate(test_set):
-            print(f"  [{i+1}/{len(test_set)}] {qa['question'][:50]}...")
+        for config_name, config in group:
+            print(f"\n{'='*60}")
+            print(f"[CONFIG] Config {config_name}: {config['label']}")
+            print(f"{'='*60}")
             
-            result = pipeline.answer(qa["question"], use_rag=config["use_rag"])
+            config_start_time = time.time()
             
-            predictions.append(result["answer"])
-            references.append(qa["answer"])
-            retrieved_sources.append(result.get("sources", []))
+            predictions = []
+            references = []
+            retrieved_sources = []
             
-            time.sleep(0.1)  # Tránh overload GPU
+            for i, qa in enumerate(test_set):
+                print(f"  [{i+1}/{len(test_set)}] {qa['question'][:50]}...")
+                
+                result = pipeline.answer(qa["question"], use_rag=config["use_rag"])
+                
+                predictions.append(result["answer"])
+                references.append(qa["answer"])
+                retrieved_sources.append(result.get("sources", []))
+                
+                time.sleep(0.1)  # Tránh overload GPU
+            
+            config_elapsed = time.time() - config_start_time
+            
+            # Compute metrics
+            print(f"\n[STATS] Computing metrics for Config {config_name}...")
+            
+            bleu = compute_bleu(predictions, references)
+            rouge_l = compute_rouge_l(predictions, references)
+            bert_f1 = compute_bertscore(predictions, references)
+            
+            metrics = {
+                "config": config_name,
+                "label": config["label"],
+                "bleu": round(bleu, 2),
+                "rouge_l": round(rouge_l, 2),
+                "bertscore_f1": round(bert_f1, 2),
+                "time_seconds": round(config_elapsed, 1),
+                "num_samples": len(test_set),
+            }
+            
+            # Recall@5 chỉ cho configs có RAG
+            if config["use_rag"]:
+                gold_sources = [qa.get("source", "") for qa in test_set]
+                recall5 = compute_recall_at_k(retrieved_sources, gold_sources, k=5)
+                metrics["recall_at_5"] = round(recall5, 2)
+            else:
+                metrics["recall_at_5"] = "N/A"
+            
+            all_results[config_name] = metrics
+            
+            print(f"\n   BLEU:        {metrics['bleu']}")
+            print(f"   ROUGE-L:     {metrics['rouge_l']}")
+            print(f"   BERTScore:   {metrics['bertscore_f1']}")
+            print(f"   Recall@5:    {metrics['recall_at_5']}")
+            
+            # Lưu predictions
+            pred_path = RESULTS_DIR / f"predictions_{config_name}.json"
+            preds_data = [
+                {"question": qa["question"], "gold": qa["answer"], 
+                 "prediction": pred, "sources": srcs}
+                for qa, pred, srcs in zip(test_set, predictions, retrieved_sources)
+            ]
+            with open(pred_path, "w", encoding="utf-8") as f:
+                json.dump(preds_data, f, ensure_ascii=False, indent=2)
         
-        config_elapsed = time.time() - config_start_time
-        
-        # Compute metrics
-        print(f"\n[STATS] Computing metrics for Config {config_name}...")
-        
-        bleu = compute_bleu(predictions, references)
-        rouge_l = compute_rouge_l(predictions, references)
-        bert_f1 = compute_bertscore(predictions, references)
-        
-        metrics = {
-            "config": config_name,
-            "label": config["label"],
-            "bleu": round(bleu, 2),
-            "rouge_l": round(rouge_l, 2),
-            "bertscore_f1": round(bert_f1, 2),
-            "time_seconds": round(config_elapsed, 1),
-            "num_samples": len(test_set),
-        }
-        
-        # Recall@5 chỉ cho configs có RAG
-        if config["use_rag"]:
-            gold_sources = [qa.get("source", "") for qa in test_set]
-            recall5 = compute_recall_at_k(retrieved_sources, gold_sources, k=5)
-            metrics["recall_at_5"] = round(recall5, 2)
-        else:
-            metrics["recall_at_5"] = "N/A"
-        
-        all_results[config_name] = metrics
-        
-        print(f"\n   BLEU:        {metrics['bleu']}")
-        print(f"   ROUGE-L:     {metrics['rouge_l']}")
-        print(f"   BERTScore:   {metrics['bertscore_f1']}")
-        print(f"   Recall@5:    {metrics['recall_at_5']}")
-        
-        # Lưu predictions
-        pred_path = RESULTS_DIR / f"predictions_{config_name}.json"
-        preds_data = [
-            {"question": qa["question"], "gold": qa["answer"], 
-             "prediction": pred, "sources": srcs}
-            for qa, pred, srcs in zip(test_set, predictions, retrieved_sources)
-        ]
-        with open(pred_path, "w", encoding="utf-8") as f:
-            json.dump(preds_data, f, ensure_ascii=False, indent=2)
+        # Free GPU between groups
+        pipeline.cleanup()
+        del pipeline
+        gc.collect()
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
     
     # ── Tổng kết ──
     print(f"\n\n{'='*70}")

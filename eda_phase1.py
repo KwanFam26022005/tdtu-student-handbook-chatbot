@@ -1,128 +1,247 @@
 import os
-import glob
-import re
+import json
 import pandas as pd
 import matplotlib.pyplot as plt
 import seaborn as sns
-from collections import Counter
 
-# ---------------------------------------------------------
-# 1. CẤU HÌNH ĐƯỜNG DẪN & TỪ KHÓA
-# ---------------------------------------------------------
-INPUT_DIR = "raw_text"
-OUTPUT_DIR = "eda_results"
-os.makedirs(OUTPUT_DIR, exist_ok=True)
+# =========================================================
+# PATH CONFIG (LOCAL WINDOWS)
+# =========================================================
+PROCESSED_DIR = r"C:\Users\User\Desktop\datamining\processed"
+OUTPUT_EDA_DIR = r"C:\Users\User\Desktop\datamining\eda_results"
 
-# Các từ khóa/thực thể quan trọng thường xuất hiện trong quy chế
-TARGET_KEYWORDS = ["điều", "khoản", "sinh viên", "tốt nghiệp", "chứng chỉ", 
-                   "ielts", "toeic", "mos", "gpa", "kỷ luật", "học bổng", "ưu tú"]
+os.makedirs(OUTPUT_EDA_DIR, exist_ok=True)
 
-# ---------------------------------------------------------
-# 2. HÀM PHÂN TÍCH TỪNG FILE TEXT
-# ---------------------------------------------------------
-def analyze_text_file(filepath):
-    with open(filepath, 'r', encoding='utf-8') as f:
-        text = f.read()
-        
-    filename = os.path.basename(filepath)
-    
-    # 2.1 Đếm từ và ký tự
-    words = text.split()
-    num_words = len(words)
-    num_chars = len(text)
-    
-    # 2.2 Phân tích cấu trúc Markdown
-    # Đếm số dòng bảng (dòng có chứa ký tự | đặc trưng của Markdown table)
-    num_table_rows = len(re.findall(r'\|.*\|', text))
-    # Đếm thẻ Heading (#, ##, ###)
-    num_headings = len(re.findall(r'^#{1,6}\s', text, re.MULTILINE))
-    # Đếm danh sách (bắt đầu bằng - hoặc 1., 2.)
-    num_list_items = len(re.findall(r'^[\-\*]\s|^\d+\.\s', text, re.MULTILINE))
-    
-    # 2.3 Phân tích thực thể/Từ khóa quan trọng
-    text_lower = text.lower()
-    keyword_counts = {kw: text_lower.count(kw) for kw in TARGET_KEYWORDS}
-    
-    # 2.4 Chất lượng / Nhiễu
-    blank_lines = len(re.findall(r'^\s*$', text, re.MULTILINE))
-    
-    return {
-        "Filename": filename,
-        "Words": num_words,
-        "Characters": num_chars,
-        "Headings": num_headings,
-        "Table_Rows": num_table_rows,
-        "List_Items": num_list_items,
-        "Blank_Lines": blank_lines,
-        **keyword_counts # Mở rộng dictionary từ khóa vào kết quả
-    }
+# File paths
+chunks_path = os.path.join(PROCESSED_DIR, "chunks.json")
+qa_path = os.path.join(PROCESSED_DIR, "qa_all.json")
 
-# ---------------------------------------------------------
-# 3. CHẠY PIPELINE VÀ TỔNG HỢP KẾT QUẢ
-# ---------------------------------------------------------
-print(f"Bắt đầu phân tích các file trong thư mục: {INPUT_DIR}/...")
-file_paths = glob.glob(os.path.join(INPUT_DIR, "*.txt"))
+# =========================================================
+# GLOBAL PLOT STYLE
+# =========================================================
+sns.set_theme(style="whitegrid")
 
-if not file_paths:
-    print("Không tìm thấy file .txt nào. Vui lòng kiểm tra lại đường dẫn!")
-    exit()
+plt.rcParams["figure.dpi"] = 120
+plt.rcParams["savefig.dpi"] = 300
+plt.rcParams["font.size"] = 11
 
-results = [analyze_text_file(fp) for fp in file_paths]
-df = pd.DataFrame(results)
+# =========================================================
+# 1. CHUNKING ANALYTICS
+# =========================================================
+if os.path.exists(chunks_path):
 
-# Lưu kết quả thô ra CSV
-csv_path = os.path.join(OUTPUT_DIR, "phase1_eda_summary.csv")
-df.to_csv(csv_path, index=False, encoding='utf-8')
-print(f"Đã lưu bảng thống kê chi tiết tại: {csv_path}")
+    with open(chunks_path, "r", encoding="utf-8") as f:
+        chunks = json.load(f)
 
-# ---------------------------------------------------------
-# 4. IN BÁO CÁO NHANH RA CONSOLE (Cho Slide)
-# ---------------------------------------------------------
-print("\n" + "="*40)
-print("BÁO CÁO TỔNG QUAN DỮ LIỆU PHASE 1")
-print("="*40)
-print(f"Tổng số file PDF đã OCR: {len(df)}")
-print(f"Tổng số từ (Total Words): {df['Words'].sum():,}")
-print(f"Độ dài trung bình: {df['Words'].mean():.0f} từ/văn bản")
-print(f"Độ dài lớn nhất: {df['Words'].max():,} từ ({df.loc[df['Words'].idxmax(), 'Filename']})")
-print(f"Tổng số thẻ cấu trúc (Headings): {df['Headings'].sum():,}")
-print(f"Tổng số dòng bảng (Table Rows): {df['Table_Rows'].sum():,}")
-print("="*40)
+    df_chunks = pd.DataFrame(chunks)
 
-# ---------------------------------------------------------
-# 5. VẼ BIỂU ĐỒ (VISUALIZATION)
-# ---------------------------------------------------------
-sns.set_theme(style="whitegrid", font="Be Vietnam Pro" if os.path.exists("Be Vietnam Pro") else "sans-serif")
+    # Length statistics
+    df_chunks["Length"] = df_chunks["text"].apply(len)
 
-# Biểu đồ 1: Phân bố độ dài văn bản (Giúp giải thích lý do cần Chunking)
-plt.figure(figsize=(10, 6))
-sns.histplot(df['Words'], bins=10, kde=True, color='#1565C0')
-plt.title('Phân bố độ dài văn bản (Số từ)', fontsize=14, fontweight='bold')
-plt.xlabel('Số lượng từ')
-plt.ylabel('Số lượng file')
-plt.savefig(os.path.join(OUTPUT_DIR, 'word_distribution.png'), dpi=300, bbox_inches='tight')
-plt.close()
+    # Metadata extraction success
+    df_chunks["Has_Section"] = df_chunks["section"].apply(
+        lambda x: bool(str(x).strip()) if pd.notna(x) else False
+    )
 
-# Biểu đồ 2: Tần suất các từ khóa cốt lõi
-keyword_sums = df[TARGET_KEYWORDS].sum().sort_values(ascending=False)
-plt.figure(figsize=(12, 6))
-sns.barplot(x=keyword_sums.values, y=keyword_sums.index, palette="viridis")
-plt.title('Tần suất xuất hiện các Keyword cốt lõi trong Quy chế', fontsize=14, fontweight='bold')
-plt.xlabel('Số lần xuất hiện')
-plt.ylabel('Từ khóa')
-plt.savefig(os.path.join(OUTPUT_DIR, 'keyword_frequencies.png'), dpi=300, bbox_inches='tight')
-plt.close()
+    print("=" * 60)
+    print("SEMANTIC CHUNKING ANALYSIS (PHASE 2B)")
+    print("=" * 60)
 
-# Biểu đồ 3: Khối lượng cấu trúc trích xuất được (Chứng minh chất lượng OCR)
-structure_sums = [df['Headings'].sum(), df['Table_Rows'].sum(), df['List_Items'].sum()]
-structure_labels = ['Headings (Chương/Điều)', 'Table Rows (Dòng bảng)', 'List Items (Gạch đầu dòng)']
-plt.figure(figsize=(8, 5))
-sns.barplot(x=structure_sums, y=structure_labels, palette=['#1565C0', '#E8293A', '#f39c12'])
-plt.title('Mức độ bảo toàn Cấu trúc Markdown sau OCR', fontsize=14, fontweight='bold')
-plt.xlabel('Tổng số lượng nhận diện được')
-for i, v in enumerate(structure_sums):
-    plt.text(v + sum(structure_sums)*0.01, i, str(v), color='black', va='center')
-plt.savefig(os.path.join(OUTPUT_DIR, 'structure_counts.png'), dpi=300, bbox_inches='tight')
-plt.close()
+    print(f"Total chunks               : {len(df_chunks):,}")
+    print(f"Average chunk length       : {df_chunks['Length'].mean():.0f} chars")
+    print(f"Min length                 : {df_chunks['Length'].min()}")
+    print(f"Max length                 : {df_chunks['Length'].max()}")
 
-print(f"Đã lưu các biểu đồ báo cáo tại thư mục: {OUTPUT_DIR}/")
+    metadata_count = df_chunks["Has_Section"].sum()
+
+    print(
+        f"Chunks with legal metadata : "
+        f"{metadata_count} ({metadata_count / len(df_chunks):.1%})"
+    )
+
+    print("=" * 60)
+
+    # -----------------------------------------------------
+    # VISUALIZATION
+    # -----------------------------------------------------
+    fig, axes = plt.subplots(1, 2, figsize=(15, 5))
+
+    # Histogram
+    sns.histplot(
+        data=df_chunks,
+        x="Length",
+        bins=30,
+        kde=True,
+        color="#2ecc71",
+        ax=axes[0]
+    )
+
+    axes[0].set_title(
+        "Chunk Length Distribution\n[After Normalization]",
+        fontweight="bold"
+    )
+
+    axes[0].set_xlabel("Number of Characters")
+    axes[0].set_ylabel("Number of Chunks")
+
+    axes[0].axvline(
+        x=80,
+        color="red",
+        linestyle="--",
+        label="Min Threshold (80)"
+    )
+
+    axes[0].axvline(
+        x=3000,
+        color="red",
+        linestyle="--",
+        label="Max Threshold (3000)"
+    )
+
+    axes[0].legend()
+
+    # Pie chart
+    section_counts = df_chunks["Has_Section"].value_counts()
+
+    axes[1].pie(
+        section_counts,
+        labels=[
+            "Detected Điều/Khoản",
+            "Fallback Paragraph"
+        ],
+        autopct="%1.1f%%",
+        colors=["#3498db", "#bdc3c7"],
+        startangle=90,
+        wedgeprops={"edgecolor": "white"}
+    )
+
+    axes[1].set_title(
+        "Legal Structure Extraction Rate",
+        fontweight="bold"
+    )
+
+    plt.tight_layout()
+
+    chunk_fig_path = os.path.join(
+        OUTPUT_EDA_DIR,
+        "chunking_analysis.png"
+    )
+
+    plt.savefig(chunk_fig_path)
+    plt.show()
+
+    print(f"[OK] Saved: {chunk_fig_path}")
+
+else:
+    print(f"[WARNING] File not found: {chunks_path}")
+
+# =========================================================
+# 2. QA DATASET ANALYSIS
+# =========================================================
+if os.path.exists(qa_path):
+
+    with open(qa_path, "r", encoding="utf-8") as f:
+        qa_data = json.load(f)
+
+    df_qa = pd.DataFrame(qa_data)
+
+    # Length analysis
+    df_qa["Q_Length"] = df_qa["question"].apply(
+        lambda x: len(str(x).split())
+    )
+
+    df_qa["A_Length"] = df_qa["answer"].apply(
+        lambda x: len(str(x).split())
+    )
+
+    print("\n" + "=" * 60)
+    print("QA DATASET ANALYSIS (PHASE 2D)")
+    print("=" * 60)
+
+    print(f"Total QA pairs             : {len(df_qa):,}")
+
+    print(
+        f"Average question length    : "
+        f"{df_qa['Q_Length'].mean():.0f} words"
+    )
+
+    print(
+        f"Average answer length      : "
+        f"{df_qa['A_Length'].mean():.0f} words"
+    )
+
+    print("=" * 60)
+
+    # -----------------------------------------------------
+    # VISUALIZATION
+    # -----------------------------------------------------
+    fig, axes = plt.subplots(1, 2, figsize=(15, 5))
+
+    # QA type distribution
+    type_counts = df_qa["type"].value_counts()
+
+    sns.barplot(
+        x=type_counts.index,
+        y=type_counts.values,
+        hue=type_counts.index,
+        palette="Set2",
+        legend=False,
+        ax=axes[0]
+    )
+
+    axes[0].set_title(
+        "QA Pair Type Distribution",
+        fontweight="bold"
+    )
+
+    axes[0].set_ylabel("Count")
+    axes[0].set_xlabel("Question Type")
+
+    for i, v in enumerate(type_counts.values):
+        axes[0].text(
+            i,
+            v + (max(type_counts.values) * 0.01),
+            str(v),
+            ha="center",
+            fontweight="bold"
+        )
+
+    # Generated source pie chart
+    source_counts = df_qa["generated_by"].value_counts()
+
+    axes[1].pie(
+        source_counts,
+        labels=source_counts.index,
+        autopct="%1.1f%%",
+        colors=["#9b59b6", "#e67e22"],
+        startangle=90,
+        wedgeprops={"edgecolor": "white"}
+    )
+
+    axes[1].set_title(
+        "QA Generation Sources",
+        fontweight="bold"
+    )
+
+    plt.tight_layout()
+
+    qa_fig_path = os.path.join(
+        OUTPUT_EDA_DIR,
+        "qa_analysis.png"
+    )
+
+    plt.savefig(qa_fig_path)
+    plt.show()
+
+    print(f"[OK] Saved: {qa_fig_path}")
+
+else:
+    print(f"[WARNING] File not found: {qa_path}")
+
+# =========================================================
+# FINISH
+# =========================================================
+print("\n" + "=" * 60)
+print(f"EDA results saved to:")
+print(OUTPUT_EDA_DIR)
+print("=" * 60)
