@@ -454,17 +454,22 @@ class LLMGenerator:
     """Generate answer bằng LLM (base hoặc fine-tuned)"""
     
     def __init__(self, model_name=LLM_BASE, lora_path: Optional[str] = None):
-        from transformers import AutoModelForCausalLM, AutoTokenizer
+        from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig
         import torch
         
         print(f"  [INIT] Loading LLM: {model_name}...")
+        
+        bnb_config = BitsAndBytesConfig(
+            load_in_4bit=True,
+            bnb_4bit_compute_dtype=torch.float16,
+        )
         
         self.tokenizer = AutoTokenizer.from_pretrained(model_name)
         self.model = AutoModelForCausalLM.from_pretrained(
             model_name,
             torch_dtype=torch.float16,
             device_map="auto",
-            load_in_4bit=True,
+            quantization_config=bnb_config,
         )
         
         # Load LoRA adapter nếu có

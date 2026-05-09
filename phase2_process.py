@@ -1,9 +1,10 @@
 """
-Phase 2 – Data Processing: Cleaning, Chunking, Vector Store, QA Generation.
+Phase 2 – Data Processing: Cleaning, Chunking, Normalization, Vector Store, QA Generation.
 
 Workflow:
   2A. Cleaning & Normalization (raw_text → clean_text)
   2B. Semantic Chunking (clean_text → chunks.json)
+  2B+. Chunk Normalization (merge tiny / split large → parent_map.json)
   2C. Build Vector Store (chunks → FAISS index)
   2D. Generate QA pairs (chunks → qa_train.json + qa_test.json)
 
@@ -22,7 +23,9 @@ import time
 import sys
 import math
 import unicodedata
+import numpy as np
 from pathlib import Path
+from collections import defaultdict
 
 # ══════════════════════════════════════════════════════════
 # CẤU HÌNH
@@ -39,6 +42,10 @@ OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 CHUNK_SIZE = 512       # tokens (ước tính ~1 token ≈ 1.5 ký tự Việt)
 CHUNK_OVERLAP = 64     # tokens overlap
 MIN_CHUNK_LENGTH = 50  # Bỏ chunk quá ngắn
+
+# Chunk normalization config (Phase 2B+)
+MIN_CHUNK_CHARS = 80   # Gộp chunk < 80 ký tự
+MAX_CHUNK_CHARS = 3000 # Tách chunk > 3000 ký tự
 
 # Embedding model
 EMBEDDING_MODEL = "BAAI/bge-m3"
@@ -782,6 +789,217 @@ def process_qa_generation():
 
 
 # ══════════════════════════════════════════════════════════
+# 2B+. CHUNK NORMALIZATION & PARENT-CHILD MAPPING
+# ══════════════════════════════════════════════════════════
+
+def merge_tiny_chunks(chunks: list[dict]) -> list[dict]:
+    """
+    Merge chunks shorter than MIN_CHUNK_CHARS into their nearest neighbor.
+    Only merges within the same source file to avoid cross-document contamination.
+    """
+    if not chunks:
+        return chunks
+
+    from itertools import groupby
+    groups = []
+    for key, group in groupby(chunks, key=lambda c: c.get("source", "")):
+        groups.append((key, list(group)))
+
+    merged_all = []
+    merge_count = 0
+
+    for source, group_chunks in groups:
+        merged = []
+        buffer = None
+
+        for chunk in group_chunks:
+            if len(chunk["text"]) < MIN_CHUNK_CHARS:
+                merge_count += 1
+                if buffer is None:
+                    buffer = chunk.copy()
+                else:
+                    buffer["text"] += "\n" + chunk["text"]
+                    buffer["text_with_context"] += "\n" + chunk["text"]
+            else:
+                if buffer is not None:
+                    chunk = chunk.copy()
+                    chunk["text"] = buffer["text"] + "\n" + chunk["text"]
+                    chunk["text_with_context"] = (
+                        buffer["text_with_context"] + "\n" + chunk["text"]
+                    )
+                    buffer = None
+                merged.append(chunk)
+
+        if buffer is not None:
+            if merged:
+                last = merged[-1].copy()
+                last["text"] += "\n" + buffer["text"]
+                last["text_with_context"] += "\n" + buffer["text_with_context"]
+                merged[-1] = last
+            else:
+                merged.append(buffer)
+
+        merged_all.extend(merged)
+
+    print(f"  Merged {merge_count} tiny chunks")
+    return merged_all
+
+
+def split_large_chunks(chunks: list[dict]) -> list[dict]:
+    """
+    Split chunks longer than MAX_CHUNK_CHARS at paragraph boundaries.
+    Each sub-chunk inherits metadata and gets a parent_id link.
+    """
+    result = []
+    split_count = 0
+
+    for chunk in chunks:
+        if len(chunk["text"]) <= MAX_CHUNK_CHARS:
+            result.append(chunk)
+            continue
+
+        split_count += 1
+        paragraphs = chunk["text"].split("\n\n")
+        sub_texts = []
+        current = ""
+
+        for para in paragraphs:
+            if len(current) + len(para) > MAX_CHUNK_CHARS and current.strip():
+                sub_texts.append(current.strip())
+                current = para + "\n\n"
+            else:
+                current += para + "\n\n"
+
+        if current.strip():
+            sub_texts.append(current.strip())
+
+        header_parts = [f"[{chunk['source']}]"]
+        if chunk.get("chapter"):
+            header_parts.append(chunk["chapter"])
+        if chunk.get("section"):
+            header_parts.append(chunk["section"])
+        context_header = " - ".join(header_parts)
+
+        for i, sub_text in enumerate(sub_texts):
+            new_chunk = chunk.copy()
+            new_chunk["text"] = sub_text
+            new_chunk["text_with_context"] = f"{context_header}\n{sub_text}"
+            new_chunk["parent_id"] = chunk["id"]
+            new_chunk["sub_index"] = i
+            result.append(new_chunk)
+
+    print(f"  Split {split_count} oversized chunks")
+    return result
+
+
+def build_parent_map(chunks: list[dict]) -> dict:
+    """
+    Build a mapping: chunk_id -> {chapter, section, source, siblings}.
+    Used by ParentContextExpander in Phase 4 to pull related chunks.
+    """
+    chapter_groups = defaultdict(list)
+    for chunk in chunks:
+        key = (chunk.get("source", ""), chunk.get("chapter", ""))
+        chapter_groups[key].append(chunk["id"])
+
+    section_groups = defaultdict(list)
+    for chunk in chunks:
+        key = (chunk.get("source", ""), chunk.get("section", ""))
+        section_groups[key].append(chunk["id"])
+
+    parent_map = {}
+    for chunk in chunks:
+        ch_key = (chunk.get("source", ""), chunk.get("chapter", ""))
+        sec_key = (chunk.get("source", ""), chunk.get("section", ""))
+
+        parent_map[chunk["id"]] = {
+            "chapter": chunk.get("chapter", ""),
+            "section": chunk.get("section", ""),
+            "source": chunk.get("source", ""),
+            "parent_id": chunk.get("parent_id", ""),
+            "section_siblings": [
+                cid for cid in section_groups.get(sec_key, [])
+                if cid != chunk["id"]
+            ],
+            "chapter_siblings": [
+                cid for cid in chapter_groups.get(ch_key, [])
+                if cid != chunk["id"]
+            ],
+        }
+
+    return parent_map
+
+
+def process_chunk_normalization():
+    """Phase 2B+: Normalize chunks va build parent-child mapping."""
+    print("\n[PHASE 2B+] Chunk Normalization & Parent-Child Mapping")
+    print("=" * 60)
+
+    chunks_path = OUTPUT_DIR / "chunks.json"
+    if not chunks_path.exists():
+        print(f"[ERROR] {chunks_path} not found. Chay chunking truoc!")
+        return False
+
+    with open(chunks_path, "r", encoding="utf-8") as f:
+        chunks = json.load(f)
+
+    orig_count = len(chunks)
+    orig_lens = [len(c["text"]) for c in chunks]
+    print(f"  Loaded {orig_count} chunks")
+    print(f"  min={min(orig_lens)}, max={max(orig_lens)}, "
+          f"avg={sum(orig_lens) // len(orig_lens)}")
+
+    # Step 1: Merge tiny
+    print(f"\n  [STEP 1] Merging tiny chunks (<{MIN_CHUNK_CHARS} chars)...")
+    chunks = merge_tiny_chunks(chunks)
+    print(f"  Result: {len(chunks)} chunks")
+
+    # Step 2: Split oversized
+    print(f"\n  [STEP 2] Splitting oversized chunks (>{MAX_CHUNK_CHARS} chars)...")
+    chunks = split_large_chunks(chunks)
+    print(f"  Result: {len(chunks)} chunks")
+
+    # Re-assign sequential IDs
+    for i, chunk in enumerate(chunks):
+        chunk["id"] = f"chunk_{i:04d}"
+
+    # Step 3: Parent map
+    print("\n  [STEP 3] Building parent-child mapping...")
+    parent_map = build_parent_map(chunks)
+
+    # Save chunks (overwrite)
+    with open(chunks_path, "w", encoding="utf-8") as f:
+        json.dump(chunks, f, ensure_ascii=False, indent=2)
+
+    parent_map_path = OUTPUT_DIR / "parent_map.json"
+    with open(parent_map_path, "w", encoding="utf-8") as f:
+        json.dump(parent_map, f, ensure_ascii=False, indent=2)
+
+    metadata = [
+        {"id": c["id"], "source": c["source"],
+         "section": c.get("section", ""), "chapter": c.get("chapter", "")}
+        for c in chunks
+    ]
+    meta_path = OUTPUT_DIR / "chunks_metadata.json"
+    with open(meta_path, "w", encoding="utf-8") as f:
+        json.dump(metadata, f, ensure_ascii=False, indent=2)
+
+    # Stats
+    new_lens = [len(c["text"]) for c in chunks]
+    print(f"\n  [STATS] Normalization Results:")
+    print(f"  Before: {orig_count} chunks | "
+          f"min={min(orig_lens)} max={max(orig_lens)}")
+    print(f"  After:  {len(chunks)} chunks | "
+          f"min={min(new_lens)} max={max(new_lens)}")
+    print(f"  Avg: {sum(new_lens) // len(new_lens)} chars")
+
+    print(f"\n[OK] Chunk normalization complete!")
+    print(f"  chunks.json:   {chunks_path}")
+    print(f"  parent_map:    {parent_map_path}")
+    return True
+
+
+# ══════════════════════════════════════════════════════════
 # MAIN
 # ══════════════════════════════════════════════════════════
 if __name__ == "__main__":
@@ -795,6 +1013,10 @@ if __name__ == "__main__":
 
     # 2B: Chunk
     if not process_chunking():
+        sys.exit(1)
+
+    # 2B+: Normalize chunks & build parent map
+    if not process_chunk_normalization():
         sys.exit(1)
 
     # 2C: Vector Store (can GPU cho embedding nhanh)
