@@ -1,8 +1,9 @@
 """
-Phase 4 – RAG Pipeline: Hybrid Retrieval + Cross-Encoder Reranker + LLM Generator.
+Phase 4 – RAG Pipeline (Enhanced): Hybrid Retrieval + Reranker + LLM Generator.
 
-Architecture:
-  Query → BM25 + Dense (bge-m3) → RRF Fusion → Reranker → Prompt → LLM → Answer
+Architecture (upgraded):
+  Query → QueryRewrite → MetadataFilter → BM25+Dense → RRF
+       → Reranker → ParentExpand → ContextCompress → LLM → Answer
 
 Components:
   - Dense retriever: FAISS + bge-m3
@@ -19,9 +20,12 @@ Chạy:
 """
 
 import json
+import re
+import os
 import numpy as np
 from pathlib import Path
 from typing import Optional
+from collections import defaultdict
 
 # ══════════════════════════════════════════════════════════
 # CẤU HÌNH
@@ -169,6 +173,250 @@ class HybridRetriever:
 
 
 # ══════════════════════════════════════════════════════════
+# METADATA FILTER (Cải tiến 2)
+# ══════════════════════════════════════════════════════════
+
+class MetadataFilter:
+    """
+    Pre-filter chunks by source/chapter based on query keywords.
+    Auto-builds keyword→source mapping from chunk content.
+    Falls back to full set if filtered results are too few.
+    """
+
+    # Query topic patterns → domain keywords in chunk text
+    TOPIC_PATTERNS = {
+        'tot_nghiep': r'tốt nghiệp|ra trường|nhận bằng|xét tốt nghiệp|bằng tốt nghiệp',
+        'hoc_phi': r'học phí|đóng tiền|miễn giảm|học bổng|trả tiền|công nợ',
+        'ky_luat': r'khen thưởng|kỷ luật|vi phạm|cảnh cáo|đình chỉ|buộc thôi|đuổi học',
+        'dao_tao': r'đào tạo|tín chỉ|học kỳ|đăng ký|môn học|điểm số|GPA|CPA|xét học vụ',
+        'ren_luyen': r'rèn luyện|điểm rèn luyện|hạnh kiểm|đánh giá rèn luyện',
+        'thuc_tap': r'thực tập|khóa luận|đồ án|luận văn|tốt nghiệp',
+        'ky_tuc_xa': r'ký túc|nội trú|phòng ở|chỗ ở|khu nội trú',
+        'thu_vien': r'thư viện|mượn sách|tài liệu|phòng đọc',
+    }
+
+    def __init__(self, chunks: list[dict]):
+        self.source_topics = defaultdict(set)  # topic → set of source names
+        self._build_index(chunks)
+
+    def _build_index(self, chunks: list[dict]):
+        """Scan all chunks to map topics → sources."""
+        for chunk in chunks:
+            source = chunk.get("source", "")
+            text_lower = chunk["text"].lower()
+            for topic, pattern in self.TOPIC_PATTERNS.items():
+                if re.search(pattern, text_lower):
+                    self.source_topics[topic].add(source)
+        print(f"  [INIT] MetadataFilter: {len(self.source_topics)} topics indexed")
+
+    def filter_chunks(
+        self, query: str, chunks: list[dict], min_results: int = 20
+    ) -> list[dict]:
+        """
+        Filter chunks to only include relevant sources.
+        Returns full set if no topic matches or too few results.
+        """
+        query_lower = query.lower()
+        relevant_sources = set()
+
+        for topic, pattern in self.TOPIC_PATTERNS.items():
+            if re.search(pattern, query_lower):
+                relevant_sources.update(self.source_topics.get(topic, set()))
+
+        if not relevant_sources:
+            return chunks  # No match → no filter
+
+        filtered = [
+            c for c in chunks if c.get("source", "") in relevant_sources
+        ]
+
+        if len(filtered) < min_results:
+            return chunks  # Too few → fallback
+
+        return filtered
+
+
+# ══════════════════════════════════════════════════════════
+# QUERY REWRITER (Cải tiến 3)
+# ══════════════════════════════════════════════════════════
+
+class QueryRewriter:
+    """
+    Rewrite informal student queries into formal regulatory language.
+    Uses dictionary-based synonym mapping (no API call needed).
+    """
+
+    SYNONYM_MAP = {
+        'đuổi học': 'buộc thôi học',
+        'bị đuổi': 'bị buộc thôi học',
+        'nghỉ học': 'bảo lưu kết quả học tập',
+        'bỏ học': 'thôi học tự nguyện',
+        'thi lại': 'thi kết thúc học phần lần hai',
+        'học lại': 'đăng ký học lại học phần',
+        'trượt': 'không đạt',
+        'rớt': 'không đạt',
+        'rớt môn': 'không đạt học phần',
+        'điểm liệt': 'điểm dưới mức tối thiểu',
+        'nợ môn': 'chưa hoàn thành học phần',
+        'GPA': 'điểm trung bình tích lũy',
+        'ra trường': 'xét tốt nghiệp',
+        'deadline': 'thời hạn quy định',
+        'chuyển trường': 'chuyển cơ sở đào tạo',
+        'bị cảnh cáo': 'cảnh báo học vụ',
+        'xin phép': 'đơn đề nghị',
+        'đóng tiền': 'nộp học phí',
+        'hoãn thi': 'tạm hoãn thi kết thúc học phần',
+        'gap year': 'bảo lưu kết quả học tập',
+        'chuyển ngành': 'chuyển ngành đào tạo',
+        'điểm danh': 'theo dõi chuyên cần',
+        'vắng thi': 'vắng mặt trong kỳ thi',
+        'phúc khảo': 'phúc tra bài thi',
+    }
+
+    def rewrite(self, query: str) -> list[str]:
+        """
+        Return query variants: [original, synonym-rewritten, keyword-extracted].
+        Multiple variants are searched and results merged via RRF.
+        """
+        variants = [query]
+
+        # Dictionary-based rewrite
+        rewritten = query
+        for informal, formal in self.SYNONYM_MAP.items():
+            if informal.lower() in query.lower():
+                rewritten = re.sub(
+                    re.escape(informal), formal, rewritten,
+                    flags=re.IGNORECASE
+                )
+
+        if rewritten != query:
+            variants.append(rewritten)
+
+        # Extract Điều/Khoản numbers for targeted search
+        dieu = re.search(r'[Đđ]iều\s+(\d+)', query)
+        if dieu:
+            variants.append(f"Điều {dieu.group(1)}")
+
+        khoan = re.search(r'[Kk]hoản\s+(\d+)', query)
+        if khoan and dieu:
+            variants.append(f"Điều {dieu.group(1)} Khoản {khoan.group(1)}")
+
+        return variants
+
+
+# ══════════════════════════════════════════════════════════
+# PARENT CONTEXT EXPANDER (Cải tiến 4)
+# ══════════════════════════════════════════════════════════
+
+class ParentContextExpander:
+    """
+    When a child chunk is retrieved (e.g., Khoản 2 of Điều 5),
+    pull sibling chunks from the same section to provide full context.
+    """
+
+    def __init__(self, chunks: list[dict], parent_map_path: Path = None):
+        self.chunk_lookup = {c["id"]: c for c in chunks}
+        self.parent_map = {}
+
+        if parent_map_path is None:
+            parent_map_path = PROCESSED_DIR / "parent_map.json"
+
+        if parent_map_path.exists():
+            with open(parent_map_path, "r", encoding="utf-8") as f:
+                self.parent_map = json.load(f)
+            print(f"  [INIT] ParentContextExpander: {len(self.parent_map)} entries")
+        else:
+            print("  [WARN] parent_map.json not found. Run phase2b_chunk_normalize.py first.")
+            print("         ParentContextExpander will be disabled.")
+
+    def expand(
+        self, top_chunks: list[dict], max_extra: int = 2
+    ) -> list[dict]:
+        """
+        For each retrieved chunk, add up to max_extra sibling chunks
+        from the same section. Avoids duplicates.
+        """
+        if not self.parent_map:
+            return top_chunks
+
+        seen_ids = {r["chunk"]["id"] for r in top_chunks}
+        extra = []
+
+        for r in top_chunks:
+            chunk_id = r["chunk"]["id"]
+            info = self.parent_map.get(chunk_id, {})
+            siblings = info.get("section_siblings", [])
+
+            added = 0
+            for sib_id in siblings:
+                if sib_id in seen_ids or added >= max_extra:
+                    break
+                if sib_id in self.chunk_lookup:
+                    extra.append({
+                        "chunk": self.chunk_lookup[sib_id],
+                        "score": r["score"] * 0.5,
+                        "rerank_score": r.get("rerank_score", 0) * 0.5,
+                        "method": "parent_expand"
+                    })
+                    seen_ids.add(sib_id)
+                    added += 1
+
+        return top_chunks + extra
+
+
+# ══════════════════════════════════════════════════════════
+# CONTEXTUAL COMPRESSOR (Cải tiến 5)
+# ══════════════════════════════════════════════════════════
+
+class ContextualCompressor:
+    """
+    After reranking, extract only query-relevant sentences from each chunk.
+    Uses keyword overlap scoring — no additional API call.
+    """
+
+    def compress(
+        self, query: str, chunks: list[dict], max_sents_per_chunk: int = 5
+    ) -> str:
+        """
+        Build compressed context string from retrieved chunks.
+        Keeps section headers and top-scoring sentences per chunk.
+        """
+        query_tokens = set(re.findall(r'\w+', query.lower()))
+        context_parts = []
+
+        for r in chunks:
+            chunk = r["chunk"]
+            header_parts = [f"[{chunk.get('source', '')}]"]
+            if chunk.get("chapter"):
+                header_parts.append(chunk["chapter"])
+            if chunk.get("section"):
+                header_parts.append(chunk["section"])
+            header = " - ".join(header_parts)
+
+            # Score each sentence by keyword overlap with query
+            sentences = re.split(r'(?<=[.;])\s+', chunk["text"])
+            scored = []
+            for sent in sentences:
+                if len(sent.strip()) < 15:
+                    continue
+                sent_tokens = set(re.findall(r'\w+', sent.lower()))
+                overlap = len(query_tokens & sent_tokens)
+                # Boost sentences containing Điều/Khoản references
+                if re.search(r'[Đđ]iều\s+\d+|[Kk]hoản\s+\d+', sent):
+                    overlap += 2
+                scored.append((overlap, sent))
+
+            # Sort by relevance, take top N
+            scored.sort(key=lambda x: x[0], reverse=True)
+            top_sents = [s for _, s in scored[:max_sents_per_chunk]]
+
+            if top_sents:
+                context_parts.append(f"{header}\n" + " ".join(top_sents))
+
+        return "\n\n".join(context_parts)
+
+
+# ══════════════════════════════════════════════════════════
 # RERANKER
 # ══════════════════════════════════════════════════════════
 
@@ -283,65 +531,126 @@ Hãy trả lời dựa trên ngữ cảnh trên."""
 # ══════════════════════════════════════════════════════════
 
 class RAGPipeline:
-    """Pipeline RAG hoàn chỉnh"""
-    
+    """Pipeline RAG hoàn chỉnh (Enhanced with 4 improvements)"""
+
     def __init__(self, use_finetuned=False):
-        print("[INIT] Khoi tao RAG Pipeline...")
+        print("[INIT] Khoi tao RAG Pipeline (Enhanced)...")
         print("=" * 60)
-        
+
         # Load chunks
         chunks_path = PROCESSED_DIR / "chunks.json"
         with open(chunks_path, "r", encoding="utf-8") as f:
             self.chunks = json.load(f)
         print(f"  [INFO] Loaded {len(self.chunks)} chunks")
-        
-        # Dense retriever
+
+        # --- Core components (unchanged) ---
         faiss_path = PROCESSED_DIR / "faiss_index.bin"
         self.dense = DenseRetriever(faiss_path, self.chunks)
-        
-        # Sparse retriever
         self.sparse = SparseRetriever(self.chunks)
-        
-        # Hybrid
         self.hybrid = HybridRetriever(self.dense, self.sparse)
-        
-        # Reranker
         self.reranker = CrossEncoderReranker()
-        
-        # LLM
-        lora_path = str(BASE_DIR / "outputs" / "finetune" / "lora_adapter") if use_finetuned else None
+
+        lora_path = (
+            str(BASE_DIR / "outputs" / "finetune" / "lora_adapter")
+            if use_finetuned else None
+        )
         self.llm = LLMGenerator(lora_path=lora_path)
-        
-        print("\n[OK] RAG Pipeline san sang!")
-    
+
+        # --- Enhancement components (new) ---
+        self.metadata_filter = MetadataFilter(self.chunks)
+        self.query_rewriter = QueryRewriter()
+        self.parent_expander = ParentContextExpander(self.chunks)
+        self.compressor = ContextualCompressor()
+
+        print("\n[OK] RAG Pipeline (Enhanced) san sang!")
+
     def answer(self, query: str, use_rag=True) -> dict:
         """
-        Trả lời câu hỏi.
-        
+        Trả lời câu hỏi — enhanced pipeline.
+
+        Flow: Rewrite → Filter → Retrieve → Rerank → Expand → Compress → Generate
+
         Returns:
-            dict với keys: answer, sources, retrieval_scores
+            dict với keys: answer, sources, retrieval_scores, mode, query_variants
         """
         if use_rag:
-            # 1. Hybrid retrieval
-            candidates = self.hybrid.search(query, top_k=TOP_K_RETRIEVAL)
-            
-            # 2. Rerank
-            top_chunks = self.reranker.rerank(query, candidates, top_k=TOP_K_RERANK)
-            
-            # 3. Build context
-            context = "\n\n".join([
-                r["chunk"]["text_with_context"] for r in top_chunks
-            ])
-            
-            # 4. Generate
+            # Step 1: Query Rewriting (Cải tiến 3)
+            query_variants = self.query_rewriter.rewrite(query)
+
+            # Step 2: Metadata Pre-filtering (Cải tiến 2)
+            filtered_chunks = self.metadata_filter.filter_chunks(
+                query, self.chunks
+            )
+            # Rebuild sparse retriever on filtered set if different
+            if len(filtered_chunks) < len(self.chunks):
+                sparse_filtered = SparseRetriever(filtered_chunks)
+            else:
+                sparse_filtered = self.sparse
+
+            # Step 3: Hybrid retrieval with multiple query variants
+            all_candidates = []
+            for variant in query_variants:
+                dense_results = self.dense.search(
+                    variant, top_k=TOP_K_RETRIEVAL
+                )
+                sparse_results = sparse_filtered.search(
+                    variant, top_k=TOP_K_RETRIEVAL
+                )
+                # Apply metadata filter to dense results (post-filter)
+                if len(filtered_chunks) < len(self.chunks):
+                    filtered_sources = {
+                        c.get("source", "") for c in filtered_chunks
+                    }
+                    dense_results = [
+                        r for r in dense_results
+                        if r["chunk"].get("source", "") in filtered_sources
+                    ]
+                all_candidates.extend(dense_results)
+                all_candidates.extend(sparse_results)
+
+            # RRF fusion across all variants
+            k_rrf = 60
+            rrf_scores = {}
+            chunk_lookup = {}
+            for rank, r in enumerate(all_candidates):
+                cid = r["chunk"]["id"]
+                rrf_scores[cid] = rrf_scores.get(cid, 0) + 1 / (k_rrf + rank + 1)
+                chunk_lookup[cid] = r["chunk"]
+
+            sorted_ids = sorted(
+                rrf_scores, key=rrf_scores.get, reverse=True
+            )
+            candidates = [
+                {"chunk": chunk_lookup[cid], "score": rrf_scores[cid],
+                 "method": "hybrid_rrf"}
+                for cid in sorted_ids[:TOP_K_RETRIEVAL]
+            ]
+
+            # Step 4: Rerank
+            top_chunks = self.reranker.rerank(
+                query, candidates, top_k=TOP_K_RERANK
+            )
+
+            # Step 5: Parent Context Expansion (Cải tiến 4)
+            expanded = self.parent_expander.expand(top_chunks, max_extra=2)
+
+            # Step 6: Contextual Compression (Cải tiến 5)
+            context = self.compressor.compress(query, expanded)
+
+            # Step 7: Generate
             answer = self.llm.generate(query, context=context)
-            
+
             return {
                 "answer": answer,
                 "sources": [r["chunk"]["source"] for r in top_chunks],
-                "sections": [r["chunk"].get("section", "") for r in top_chunks],
-                "retrieval_scores": [r["rerank_score"] for r in top_chunks],
-                "mode": "RAG"
+                "sections": [
+                    r["chunk"].get("section", "") for r in top_chunks
+                ],
+                "retrieval_scores": [
+                    r["rerank_score"] for r in top_chunks
+                ],
+                "query_variants": query_variants,
+                "mode": "RAG-Enhanced"
             }
         else:
             # No RAG: chỉ dùng LLM
@@ -351,6 +660,7 @@ class RAGPipeline:
                 "sources": [],
                 "sections": [],
                 "retrieval_scores": [],
+                "query_variants": [],
                 "mode": "No-RAG"
             }
 
