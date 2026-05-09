@@ -46,6 +46,8 @@ GRAD_ACCUM_STEPS = 4
 LEARNING_RATE = 2e-4
 NUM_EPOCHS = 3
 WARMUP_STEPS = 10
+SAVE_TOTAL_LIMIT = 2       # Keep only 2 most recent checkpoints (avoid disk overflow)
+EVAL_SPLIT_RATIO = 0.05    # 5% of data for eval (needed for best-model saving)
 
 # Output
 OUTPUT_DIR_TRAIN = BASE_DIR / "outputs" / "finetune"
@@ -157,14 +159,19 @@ def prepare_dataset(tokenizer):
         
         formatted_data.append({"text": text})
     
-    # Tạo HuggingFace Dataset
+    # Tạo HuggingFace Dataset with train/eval split
     from datasets import Dataset
     dataset = Dataset.from_list(formatted_data)
-    
-    print(f"[OK] Dataset: {len(dataset)} samples")
-    print(f"   Ví dụ: {dataset[0]['text'][:200]}...")
-    
-    return dataset
+
+    # Split off a small eval set for best-model checkpoint
+    split = dataset.train_test_split(test_size=EVAL_SPLIT_RATIO, seed=42)
+    train_dataset = split["train"]
+    eval_dataset = split["test"]
+
+    print(f"[OK] Dataset: {len(train_dataset)} train + {len(eval_dataset)} eval")
+    print(f"   Ví dụ: {train_dataset[0]['text'][:200]}...")
+
+    return train_dataset, eval_dataset
 
 
 # ══════════════════════════════════════════════════════════
@@ -203,7 +210,7 @@ class DriveBackupCallback:
 # 4. TRAIN
 # ══════════════════════════════════════════════════════════
 
-def train(model, tokenizer, dataset):
+def train(model, tokenizer, dataset, eval_dataset=None):
     """Fine-tune model bằng SFTTrainer (tương thích mọi phiên bản trl)"""
     from trl import SFTTrainer
     from transformers import TrainingArguments
@@ -231,6 +238,11 @@ def train(model, tokenizer, dataset):
         seed=42,
         output_dir=str(OUTPUT_DIR_TRAIN),
         save_strategy="epoch",
+        save_total_limit=SAVE_TOTAL_LIMIT,           # Fix B: cap disk usage
+        eval_strategy="epoch",                       # Fix A: eval mỗi epoch
+        load_best_model_at_end=True,                  # Fix A: load best khi xong
+        metric_for_best_model="eval_loss",            # Fix A: best = lowest loss
+        greater_is_better=False,                      # Fix A: lower loss = better
         report_to="none",
     )
     
@@ -246,6 +258,7 @@ def train(model, tokenizer, dataset):
             model=model,
             processing_class=tokenizer,
             train_dataset=dataset,
+            eval_dataset=eval_dataset,
             args=training_args,
             callbacks=[_DriveBackup()],
         )
@@ -254,6 +267,7 @@ def train(model, tokenizer, dataset):
             model=model,
             tokenizer=tokenizer,
             train_dataset=dataset,
+            eval_dataset=eval_dataset,
             args=training_args,
             callbacks=[_DriveBackup()],
         )
@@ -268,12 +282,25 @@ def train(model, tokenizer, dataset):
     if torch.cuda.is_available():
         print(f"   GPU Memory: {torch.cuda.memory_allocated()/1e9:.2f} GB used")
     
+    # Fix C: sort checkpoints by step number (not lexicographic)
+    def _get_step(p):
+        """Extract step number from checkpoint-NNN directory name."""
+        import re
+        m = re.search(r'checkpoint-(\d+)', p.name)
+        return int(m.group(1)) if m else 0
+
     # Resume từ checkpoint nếu có
     resume_dir = None
-    checkpoints = sorted(OUTPUT_DIR_TRAIN.glob("checkpoint-*")) if OUTPUT_DIR_TRAIN.exists() else []
+    checkpoints = (
+        sorted(OUTPUT_DIR_TRAIN.glob("checkpoint-*"), key=_get_step)
+        if OUTPUT_DIR_TRAIN.exists() else []
+    )
     if not checkpoints:
         # Thử tìm trên Drive
-        drive_checkpoints = sorted(DRIVE_BACKUP_DIR.glob("checkpoint-*")) if DRIVE_BACKUP_DIR.exists() else []
+        drive_checkpoints = (
+            sorted(DRIVE_BACKUP_DIR.glob("checkpoint-*"), key=_get_step)
+            if DRIVE_BACKUP_DIR.exists() else []
+        )
         if drive_checkpoints:
             latest_drive = drive_checkpoints[-1]
             local_copy = OUTPUT_DIR_TRAIN / latest_drive.name
@@ -348,12 +375,13 @@ if __name__ == "__main__":
     model, tokenizer = load_model()
     
     # 2. Prepare data
-    dataset = prepare_dataset(tokenizer)
-    if dataset is None:
+    result = prepare_dataset(tokenizer)
+    if result is None:
         exit(1)
+    train_dataset, eval_dataset = result
     
     # 3. Train
-    trainer = train(model, tokenizer, dataset)
+    trainer = train(model, tokenizer, train_dataset, eval_dataset)
     
     # 4. Save
     save_model(model, tokenizer)
