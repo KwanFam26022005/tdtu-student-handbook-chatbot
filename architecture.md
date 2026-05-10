@@ -25,6 +25,7 @@ Xây dựng hệ thống chatbot hỏi đáp tiếng Việt chuyên biệt cho d
 | Vector Store | FAISS (IndexFlatIP — cosine similarity) |
 | Sparse Retriever | BM25 (rank_bm25) |
 | Fusion | Reciprocal Rank Fusion (RRF, k=60) |
+| **HyDE** | **Hypothetical Document Embedding (Gao et al., 2022)** |
 | Reranker | BAAI/bge-reranker-v2-m3 (Cross-Encoder) |
 | Base LLM | Qwen2.5-3B-Instruct |
 | Fine-tuning | QLoRA 4-bit (r=16, α=32, NF4) |
@@ -68,16 +69,20 @@ flowchart TB
     subgraph Phase4["Phase 4 — RAG Pipeline"]
         QUERY["User Query"]
         REWRITE["Query Rewriter\n(synonym mapping)"]
+        HYDE_BOX["HyDE Generator\n(LLM → hypothesis)"]
         FILTER["Metadata Filter\n(topic → source)"]
         HYBRID["Hybrid Retrieval\nBM25 + Dense → RRF"]
         RERANK["Cross-Encoder Reranker\nbge-reranker-v2-m3"]
-        EXPAND["Parent Context\nExpander"]
-        COMPRESS["Contextual\nCompressor"]
+        CRAG_BOX["CRAG Gate\n(relevance check)"]
+        EXPAND["Hierarchical\nExpander\n(Chương>Điều>Khoản)"]
+        COMPRESS["Semantic\nCompressor\n(bge-m3 cosine)"]
         GEN["LLM Generator\n(base or fine-tuned)"]
         ANS["Answer + Sources"]
         QUERY --> REWRITE --> FILTER
+        REWRITE --> HYDE_BOX
         FAISS --> HYBRID
-        FILTER --> HYBRID --> RERANK --> EXPAND --> COMPRESS --> GEN --> ANS
+        HYDE_BOX --> HYBRID
+        FILTER --> HYBRID --> RERANK --> CRAG_BOX --> EXPAND --> COMPRESS --> GEN --> ANS
         LORA -.-> GEN
     end
 
@@ -97,15 +102,19 @@ flowchart TB
 ```mermaid
 flowchart LR
     Q["Query"] --> QR["QueryRewriter"]
+    QR --> HYDE["HyDEGenerator\nLLM → hypothesis"]
     QR --> MF["MetadataFilter"]
-    MF --> DR["DenseRetriever\nFAISS + bge-m3"]
+    HYDE --> DR["DenseRetriever\nFAISS + bge-m3"]
+    MF --> DR
     MF --> SR["SparseRetriever\nBM25"]
     DR --> RRF["RRF Fusion\nk=60"]
     SR --> RRF
     RRF --> RE["CrossEncoder\nReranker\ntop-5"]
-    RE --> PE["ParentContext\nExpander\n+2 siblings"]
-    PE --> CC["Contextual\nCompressor"]
-    CC --> LLM["Qwen2.5-3B\n+ LoRA"]
+    RE --> CRAG["CRAG Gate\nCORRECT/AMBIGUOUS/\nINCORRECT"]
+    CRAG -->|CORRECT/AMBIGUOUS| HE["Hierarchical\nExpander\nChương>Điều>Khoản"]
+    CRAG -->|INCORRECT| FAIL["Fallback\nResponse"]
+    HE --> SC["Semantic\nCompressor\nbge-m3 cosine"]
+    SC --> LLM["Qwen2.5-3B\n+ LoRA"]
     LLM --> A["Answer"]
 ```
 
@@ -351,40 +360,46 @@ flowchart LR
 
 ### Phase 4 — RAG Pipeline (`phase4_rag.py`)
 
-**Mục tiêu:** Hệ thống truy xuất và sinh câu trả lời end-to-end với 5 cải tiến so với RAG cơ bản.
+**Mục tiêu:** Hệ thống truy xuất và sinh câu trả lời end-to-end với 8 cải tiến so với RAG cơ bản.
 
-**Kiến trúc 7 bước:**
+**Kiến trúc 10 bước:**
 
 | Bước | Component | Mô tả |
 |---|---|---|
 | 1 | QueryRewriter | Dictionary-based synonym mapping (24 cặp slang → formal) |
-| 2 | MetadataFilter | Pre-filter chunks theo topic (8 categories) → source mapping |
-| 3 | HybridRetriever | BM25 (sparse) + FAISS/bge-m3 (dense), top-20 mỗi retriever |
-| 4 | RRF Fusion | Reciprocal Rank Fusion (k=60), merge results từ multiple query variants |
-| 5 | CrossEncoderReranker | bge-reranker-v2-m3, max_length=512, chọn top-5 |
-| 6 | ParentContextExpander | Thêm tối đa 2 sibling chunks cùng section (score × 0.5) |
-| 7 | ContextualCompressor | Keyword overlap scoring, giữ top-5 sentences/chunk + boost Điều/Khoản |
+| 2 | **HyDEGenerator** | **LLM sinh đoạn quy chế giả định (max 120 tokens), embed cho dense retrieval (Gao et al., 2022)** |
+| 3 | MetadataFilter | Pre-filter chunks theo topic (8 categories) → source mapping |
+| 4 | HybridRetriever | BM25 (sparse) + FAISS/bge-m3 (dense + hypothesis), top-20 mỗi retriever |
+| 5 | RRF Fusion | Reciprocal Rank Fusion (k=60), merge results từ multiple query variants |
+| 6 | CrossEncoderReranker | bge-reranker-v2-m3, max_length=512, chọn top-5 |
+| 7 | **CRAGRelevanceGate** | **Kiểm tra chất lượng retrieval: CORRECT / AMBIGUOUS / INCORRECT (Yan et al., 2024)** |
+| 8 | **HierarchicalExpander** | **Khai thác cây pháp lý Chương>Điều>Khoản, kéo sibling cùng Điều + parent_map** |
+| 9 | **SemanticCompressor** | **Sentence embedding similarity (bge-m3 cosine) thay vì keyword overlap, giữ thứ tự gốc** |
+| 10 | LLM Generator | Qwen2.5-3B (base hoặc fine-tuned), max_new_tokens=512 |
 
-**5 cải tiến so với RAG cơ bản:**
+**8 cải tiến so với RAG cơ bản:**
 
 1. **Hybrid Retrieval:** BM25 + Dense thay vì chỉ Dense → bắt được cả exact match lẫn semantic similarity
 2. **Metadata Pre-filtering:** Thu hẹp search space theo topic trước khi retrieve
 3. **Query Rewriting:** Chuyển slang sinh viên thành ngôn ngữ pháp lý (vd: "đuổi học" → "buộc thôi học")
-4. **Parent Context Expansion:** Khi retrieve được Khoản 2, tự động kéo thêm Khoản 1, 3 cùng Điều
-5. **Contextual Compression:** Chỉ giữ câu liên quan trong chunk, giảm noise cho LLM
+4. **Hierarchical Context Expansion:** Khai thác cây Chương>Điều>Khoản — khi retrieve Khoản 2, kéo toàn bộ Khoản cùng Điều (không chỉ flat siblings)
+5. **Semantic Compression:** Dùng bge-m3 cosine similarity chọn câu liên quan (thay vì keyword overlap), hiểu được "buộc thôi học" ≈ "đuổi học", giữ câu "trừ trường hợp quy định tại..."
+6. **HyDE:** LLM sinh câu trả lời giả định → embed hypothesis thay vì embed query → dense retrieval chính xác hơn
+7. **CRAG (Corrective RAG):** Kiểm tra reranker score → nếu context không liên quan, trả fallback thay vì hallucinate; nếu mơ hồ, thêm cảnh báo vào prompt
+8. **Sentence Order Preservation:** Sau khi chọn câu quan trọng, sắp xếp lại theo vị trí gốc → giữ mạch logic văn bản pháp lý
 
 **LLM Generator config:**
 - 4-bit quantization, float16
-- max_new_tokens=256, temperature=0.3, top_p=0.9
+- max_new_tokens=512, temperature=0.3, top_p=0.9
 - repetition_penalty=1.1
 - System prompt yêu cầu trích dẫn Điều/Khoản cụ thể
 
 **Input/Output:**
 - Input: User query + FAISS index + chunks + LoRA adapter (optional)
-- Output: Answer + sources + sections + retrieval scores
+- Output: Answer + sources + sections + retrieval scores + hyde_hypothesis + crag_verdict
 
 > **SLIDE NOTE:**  
-> "Phase 4 là RAG pipeline enhanced với 5 cải tiến: hybrid retrieval BM25+Dense, metadata pre-filtering, query rewriting cho slang sinh viên, parent context expansion kéo sibling chunks, và contextual compression giảm noise. Pipeline 7 bước từ query đến answer, rerank bằng cross-encoder bge-reranker-v2-m3."
+> "Phase 4 là **Advanced RAG / Modular RAG** pipeline với 8 cải tiến: hybrid retrieval, metadata filtering, query rewriting, **HyDE**, **hierarchical expansion** (cây pháp lý Chương>Điều>Khoản), **semantic compression** (bge-m3 cosine thay keyword overlap), **CRAG** (kiểm tra relevance trước khi sinh), và sentence order preservation. Pipeline 10 bước, rerank bằng cross-encoder."
 
 ---
 

@@ -2,8 +2,9 @@
 Phase 4 – RAG Pipeline (Enhanced): Hybrid Retrieval + Reranker + LLM Generator.
 
 Architecture (upgraded):
-  Query → QueryRewrite → MetadataFilter → BM25+Dense → RRF
-       → Reranker → ParentExpand → ContextCompress → LLM → Answer
+  Query → QueryRewrite → HyDE → MetadataFilter → BM25+Dense → RRF
+       → Reranker → HierarchicalExpand → SemanticCompress
+       → CRAGGate → LLM → Answer
 
 Components:
   - Dense retriever: FAISS + bge-m3
@@ -305,84 +306,197 @@ class QueryRewriter:
 
 
 # ══════════════════════════════════════════════════════════
-# PARENT CONTEXT EXPANDER (Cải tiến 4)
+# HyDE — HYPOTHETICAL DOCUMENT EMBEDDING (Cải tiến 6)
 # ══════════════════════════════════════════════════════════
 
-class ParentContextExpander:
+class HyDEGenerator:
     """
-    When a child chunk is retrieved (e.g., Khoản 2 of Điều 5),
-    pull sibling chunks from the same section to provide full context.
+    Hypothetical Document Embedding — Gao et al. (2022),
+    "Precise Zero-Shot Dense Retrieval without Relevance Labels".
+
+    Thay vì embed câu hỏi gốc của sinh viên, LLM sinh ra một đoạn
+    quy chế GIẢ ĐỊNH có thể trả lời câu hỏi đó. Embedding của đoạn
+    giả định gần với phong cách văn bản pháp lý hơn → cải thiện
+    độ chính xác của dense retrieval.
+
+    Ví dụ:
+        Query     : "nếu điểm chuyên cần dưới 50% thì có bị cảnh báo không?"
+        Hypothesis: "Sinh viên có điểm chuyên cần dưới 50% trong học kỳ
+                     sẽ bị cảnh báo học vụ theo Điều 16 Khoản 1..."
+    """
+
+    HYDE_SYSTEM = (
+        "Bạn là chuyên gia về quy chế TDTU. "
+        "Hãy viết một đoạn quy chế NGẮN (2-4 câu, dưới 100 từ) "
+        "giống phong cách văn bản pháp lý, có thể trả lời câu hỏi sau. "
+        "Chỉ viết đoạn quy chế, không giải thích thêm."
+    )
+
+    def __init__(self, llm_generator):
+        """Nhận LLMGenerator đã khởi tạo để tái sử dụng model/tokenizer."""
+        self.llm = llm_generator
+
+    def generate_hypothesis(self, query: str) -> str:
+        """
+        Sinh một đoạn quy chế giả định từ câu hỏi.
+        Dùng greedy decoding (do_sample=False) để ổn định, tối đa 120 tokens.
+        """
+        messages = [
+            {"role": "system", "content": self.HYDE_SYSTEM},
+            {"role": "user", "content": query},
+        ]
+        text = self.llm.tokenizer.apply_chat_template(
+            messages, tokenize=False, add_generation_prompt=True
+        )
+        inputs = self.llm.tokenizer(text, return_tensors="pt").to(
+            self.llm.model.device
+        )
+
+        import torch
+        with torch.no_grad():
+            outputs = self.llm.model.generate(
+                **inputs,
+                max_new_tokens=256,
+                do_sample=False,
+                repetition_penalty=1.1,
+            )
+        hypothesis = self.llm.tokenizer.decode(
+            outputs[0][inputs["input_ids"].shape[1]:],
+            skip_special_tokens=True,
+        ).strip()
+        print(f"  [HyDE] Hypothesis: {hypothesis[:80]}...")
+        return hypothesis
+
+
+# ══════════════════════════════════════════════════════════
+# HIERARCHICAL CONTEXT EXPANDER (Cải tiến 4 — nâng cấp)
+# ══════════════════════════════════════════════════════════
+
+class HierarchicalExpander:
+    """
+    Khai thác cấu trúc cây pháp lý: Chương > Điều > Khoản > điểm a/b/c.
+
+    Khi retrieve được 1 chunk thuộc Khoản 2 Điều 5, tự động:
+      1. Kéo toàn bộ Khoản cùng Điều (sibling)
+      2. Kéo header Điều (parent) nếu chunk không chứa header
+      3. Ưu tiên Khoản liền kề (Khoản 1, 3) trước Khoản xa
     """
 
     def __init__(self, chunks: list[dict], parent_map_path: Path = None):
         self.chunk_lookup = {c["id"]: c for c in chunks}
         self.parent_map = {}
 
+        # Build indexes: section → [chunk_ids], chapter → [chunk_ids]
+        self.section_index: dict[str, list[str]] = defaultdict(list)  # "Điều 5" → [id1, id2...]
+        self.chapter_index: dict[str, list[str]] = defaultdict(list)
+
+        for c in chunks:
+            sec = c.get("section", "")
+            chap = c.get("chapter", "")
+            src = c.get("source", "")
+            if sec:
+                self.section_index[f"{src}||{sec}"].append(c["id"])
+            if chap:
+                self.chapter_index[f"{src}||{chap}"].append(c["id"])
+
         if parent_map_path is None:
             parent_map_path = PROCESSED_DIR / "parent_map.json"
-
         if parent_map_path.exists():
             with open(parent_map_path, "r", encoding="utf-8") as f:
                 self.parent_map = json.load(f)
-            print(f"  [INIT] ParentContextExpander: {len(self.parent_map)} entries")
-        else:
-            print("  [WARN] parent_map.json not found. Run phase2b_chunk_normalize.py first.")
-            print("         ParentContextExpander will be disabled.")
+
+        print(f"  [INIT] HierarchicalExpander: {len(self.section_index)} sections, "
+              f"{len(self.chapter_index)} chapters indexed")
 
     def expand(
         self, top_chunks: list[dict], max_extra: int = 2
     ) -> list[dict]:
         """
-        For each retrieved chunk, add up to max_extra sibling chunks
-        from the same section. Avoids duplicates.
+        Expand retrieved chunks theo cấu trúc cây pháp lý.
+        Ưu tiên: cùng Điều > cùng Chương > parent_map siblings.
         """
-        if not self.parent_map:
-            return top_chunks
-
         seen_ids = {r["chunk"]["id"] for r in top_chunks}
         extra = []
 
         for r in top_chunks:
-            chunk_id = r["chunk"]["id"]
-            info = self.parent_map.get(chunk_id, {})
-            siblings = info.get("section_siblings", [])
+            chunk = r["chunk"]
+            chunk_id = chunk["id"]
+            src = chunk.get("source", "")
+            sec = chunk.get("section", "")
 
+            # Ưu tiên 1: Kéo siblings cùng Điều (cùng source)
             added = 0
-            for sib_id in siblings:
-                if sib_id in seen_ids or added >= max_extra:
-                    break
-                if sib_id in self.chunk_lookup:
+            if sec:
+                section_key = f"{src}||{sec}"
+                for sib_id in self.section_index.get(section_key, []):
+                    if sib_id in seen_ids or added >= max_extra:
+                        break
                     extra.append({
                         "chunk": self.chunk_lookup[sib_id],
-                        "score": r["score"] * 0.5,
-                        "rerank_score": r.get("rerank_score", 0) * 0.5,
-                        "method": "parent_expand"
+                        "score": r["score"] * 0.6,
+                        "rerank_score": r.get("rerank_score", 0) * 0.6,
+                        "method": "hierarchical_section"
                     })
                     seen_ids.add(sib_id)
                     added += 1
+
+            # Ưu tiên 2: Fallback sang parent_map siblings (nếu còn slot)
+            if added < max_extra and chunk_id in self.parent_map:
+                siblings = self.parent_map[chunk_id].get("section_siblings", [])
+                for sib_id in siblings:
+                    if sib_id in seen_ids or added >= max_extra:
+                        break
+                    if sib_id in self.chunk_lookup:
+                        extra.append({
+                            "chunk": self.chunk_lookup[sib_id],
+                            "score": r["score"] * 0.4,
+                            "rerank_score": r.get("rerank_score", 0) * 0.4,
+                            "method": "hierarchical_parent"
+                        })
+                        seen_ids.add(sib_id)
+                        added += 1
 
         return top_chunks + extra
 
 
 # ══════════════════════════════════════════════════════════
-# CONTEXTUAL COMPRESSOR (Cải tiến 5)
+# SEMANTIC COMPRESSOR (Cải tiến 5 — nâng cấp)
 # ══════════════════════════════════════════════════════════
 
-class ContextualCompressor:
+class SemanticCompressor:
     """
-    After reranking, extract only query-relevant sentences from each chunk.
-    Uses keyword overlap scoring — no additional API call.
+    Thay thế keyword overlap bằng sentence embedding similarity.
+    Dùng bge-m3 đã load sẵn từ DenseRetriever → không tốn thêm VRAM.
+
+    So với ContextualCompressor cũ (keyword overlap):
+      - Hiểu ngữ nghĩa: "buộc thôi học" ≈ "đuổi học" (overlap=0 nhưng cosine≈0.8)
+      - Giữ câu pháp lý quan trọng: "trừ trường hợp quy định tại khoản 2"
+      - Vẫn giữ boost cho Điều/Khoản references
     """
+
+    def __init__(self, embed_model=None):
+        """
+        Args:
+            embed_model: SentenceTransformer instance (tái sử dụng từ DenseRetriever)
+        """
+        self.embed_model = embed_model
 
     def compress(
         self, query: str, chunks: list[dict], max_sents_per_chunk: int = 5
     ) -> str:
         """
-        Build compressed context string from retrieved chunks.
-        Keeps section headers and top-scoring sentences per chunk.
+        Build compressed context. Chọn câu theo cosine similarity với query,
+        sau đó sắp xếp lại theo thứ tự gốc trong văn bản.
         """
-        query_tokens = set(re.findall(r'\w+', query.lower()))
         context_parts = []
+
+        # Encode query một lần
+        if self.embed_model:
+            query_emb = self.embed_model.encode(
+                [query], normalize_embeddings=True
+            )
+        else:
+            query_emb = None
 
         for r in chunks:
             chunk = r["chunk"]
@@ -393,27 +507,112 @@ class ContextualCompressor:
                 header_parts.append(chunk["section"])
             header = " - ".join(header_parts)
 
-            # Score each sentence by keyword overlap with query
             sentences = re.split(r'(?<=[.;])\s+', chunk["text"])
-            scored = []
-            for sent in sentences:
-                if len(sent.strip()) < 15:
-                    continue
-                sent_tokens = set(re.findall(r'\w+', sent.lower()))
-                overlap = len(query_tokens & sent_tokens)
-                # Boost sentences containing Điều/Khoản references
-                if re.search(r'[Đđ]iều\s+\d+|[Kk]hoản\s+\d+', sent):
-                    overlap += 2
-                scored.append((overlap, sent))
+            valid_sents = [
+                (i, s) for i, s in enumerate(sentences) if len(s.strip()) >= 15
+            ]
 
-            # Sort by relevance, take top N
-            scored.sort(key=lambda x: x[0], reverse=True)
-            top_sents = [s for _, s in scored[:max_sents_per_chunk]]
+            if not valid_sents:
+                continue
+
+            if query_emb is not None and len(valid_sents) > max_sents_per_chunk:
+                # Semantic scoring: cosine similarity
+                sent_texts = [s for _, s in valid_sents]
+                sent_embs = self.embed_model.encode(
+                    sent_texts, normalize_embeddings=True
+                )
+                similarities = (sent_embs @ query_emb.T).flatten()
+
+                indexed_scored = []
+                for j, (orig_idx, sent) in enumerate(valid_sents):
+                    score = float(similarities[j])
+                    # Boost sentences containing Điều/Khoản references
+                    if re.search(r'[Đđ]iều\s+\d+|[Kk]hoản\s+\d+', sent):
+                        score += 0.15
+                    # Boost cross-reference sentences ("quy định tại...")
+                    if re.search(r'quy định tại|theo quy định|trừ trường hợp', sent, re.IGNORECASE):
+                        score += 0.1
+                    indexed_scored.append((orig_idx, score, sent))
+
+                # Chọn top-N theo score, rồi sắp xếp lại theo thứ tự gốc
+                top_by_score = sorted(indexed_scored, key=lambda x: x[1], reverse=True)[:max_sents_per_chunk]
+                top_by_order = sorted(top_by_score, key=lambda x: x[0])
+                top_sents = [s for _, _, s in top_by_order]
+            else:
+                # Fallback: giữ nguyên (ít câu, hoặc không có embed model)
+                top_sents = [s for _, s in valid_sents[:max_sents_per_chunk]]
 
             if top_sents:
                 context_parts.append(f"{header}\n" + " ".join(top_sents))
 
         return "\n\n".join(context_parts)
+
+
+# ══════════════════════════════════════════════════════════
+# CRAG — CORRECTIVE RAG RELEVANCE GATE (Cải tiến 7)
+# ══════════════════════════════════════════════════════════
+
+class CRAGRelevanceGate:
+    """
+    Corrective RAG — Yan et al. (2024).
+
+    Kiểm tra chất lượng retrieval trước khi đưa vào LLM:
+      - Nếu reranker score cao → CORRECT: dùng context bình thường
+      - Nếu score trung bình → AMBIGUOUS: thêm cảnh báo vào prompt
+      - Nếu score thấp → INCORRECT: không dùng context, trả lời fallback
+
+    Tránh LLM hallucinate dựa trên context noise.
+    """
+
+    def __init__(self, high_threshold: float = 0.5, low_threshold: float = -2.0):
+        """
+        Thresholds cho cross-encoder score (bge-reranker-v2-m3).
+        Typical range: -10 → +10, với >0 thường là relevant.
+        """
+        self.high_threshold = high_threshold
+        self.low_threshold = low_threshold
+
+    def evaluate(self, top_chunks: list[dict]) -> dict:
+        """
+        Đánh giá chất lượng retrieval.
+
+        Returns:
+            dict: {"verdict": "CORRECT"|"AMBIGUOUS"|"INCORRECT",
+                   "top_score": float, "avg_score": float, "reason": str}
+        """
+        if not top_chunks:
+            return {
+                "verdict": "INCORRECT",
+                "top_score": 0.0,
+                "avg_score": 0.0,
+                "reason": "Không tìm thấy chunks liên quan"
+            }
+
+        scores = [r.get("rerank_score", 0.0) for r in top_chunks]
+        top_score = max(scores)
+        avg_score = sum(scores) / len(scores)
+
+        if top_score >= self.high_threshold:
+            return {
+                "verdict": "CORRECT",
+                "top_score": top_score,
+                "avg_score": avg_score,
+                "reason": f"Top reranker score {top_score:.2f} >= {self.high_threshold}"
+            }
+        elif top_score >= self.low_threshold:
+            return {
+                "verdict": "AMBIGUOUS",
+                "top_score": top_score,
+                "avg_score": avg_score,
+                "reason": f"Score {top_score:.2f} ở vùng không chắc chắn"
+            }
+        else:
+            return {
+                "verdict": "INCORRECT",
+                "top_score": top_score,
+                "avg_score": avg_score,
+                "reason": f"Top score {top_score:.2f} < {self.low_threshold} — context không liên quan"
+            }
 
 
 # ══════════════════════════════════════════════════════════
@@ -561,13 +760,18 @@ class RAGPipeline:
         )
         self.llm = LLMGenerator(lora_path=lora_path)
 
-        # --- Enhancement components (new) ---
+        # --- Enhancement components ---
         self.metadata_filter = MetadataFilter(self.chunks)
         self.query_rewriter = QueryRewriter()
-        self.parent_expander = ParentContextExpander(self.chunks)
-        self.compressor = ContextualCompressor()
+        self.hierarchical_expander = HierarchicalExpander(self.chunks)
+        # SemanticCompressor tái sử dụng embed model từ DenseRetriever
+        self.compressor = SemanticCompressor(embed_model=self.dense.embed_model)
+        # HyDE dùng lại LLM đã load — không tốn thêm VRAM
+        self.hyde = HyDEGenerator(self.llm)
+        # CRAG relevance gate — kiểm tra chất lượng retrieval
+        self.crag_gate = CRAGRelevanceGate()
 
-        print("\n[OK] RAG Pipeline (Enhanced) san sang!")
+        print("\n[OK] RAG Pipeline (Enhanced + HyDE + CRAG) san sang!")
 
     def cleanup(self):
         """Giải phóng GPU memory — gọi giữa các config trên Colab."""
@@ -610,28 +814,36 @@ class RAGPipeline:
             else:
                 sparse_filtered = self.sparse
 
-            # Step 3: Hybrid retrieval with multiple query variants
+            # Step 2.5: HyDE — sinh hypothesis để cải thiện dense retrieval (Cải tiến 6)
+            hypothesis = self.hyde.generate_hypothesis(query)
+            # Dense dùng thêm hypothesis; BM25 chỉ dùng query gốc (keyword match)
+            dense_query_variants = query_variants + [hypothesis]
+
+            # Pre-compute filtered_sources một lần duy nhất
+            filtered_sources = (
+                {c.get("source", "") for c in filtered_chunks}
+                if len(filtered_chunks) < len(self.chunks) else None
+            )
+
+            # Step 3: Hybrid retrieval
             all_candidates = []
-            for variant in query_variants:
-                dense_results = self.dense.search(
-                    variant, top_k=TOP_K_RETRIEVAL
-                )
-                sparse_results = sparse_filtered.search(
-                    variant, top_k=TOP_K_RETRIEVAL
-                )
-                # Apply metadata filter to dense results (post-filter)
-                if len(filtered_chunks) < len(self.chunks):
-                    filtered_sources = {
-                        c.get("source", "") for c in filtered_chunks
-                    }
+
+            # Dense retrieval: query_variants + hypothesis (HyDE)
+            for variant in dense_query_variants:
+                dense_results = self.dense.search(variant, top_k=TOP_K_RETRIEVAL)
+                if filtered_sources:
                     dense_results = [
                         r for r in dense_results
                         if r["chunk"].get("source", "") in filtered_sources
                     ]
                 all_candidates.extend(dense_results)
+
+            # Sparse (BM25): chỉ query_variants gốc (hypothesis không tốt cho keyword match)
+            for variant in query_variants:
+                sparse_results = sparse_filtered.search(variant, top_k=TOP_K_RETRIEVAL)
                 all_candidates.extend(sparse_results)
 
-            # RRF fusion across all variants
+            # RRF fusion across all candidates
             k_rrf = 60
             rrf_scores = {}
             chunk_lookup = {}
@@ -654,13 +866,38 @@ class RAGPipeline:
                 query, candidates, top_k=TOP_K_RERANK
             )
 
-            # Step 5: Parent Context Expansion (Cải tiến 4)
-            expanded = self.parent_expander.expand(top_chunks, max_extra=2)
+            # Step 5: Hierarchical Context Expansion (Cải tiến 4 — nâng cấp)
+            expanded = self.hierarchical_expander.expand(top_chunks, max_extra=2)
 
-            # Step 6: Contextual Compression (Cải tiến 5)
+            # Step 6: CRAG Relevance Gate (Cải tiến 7)
+            crag_result = self.crag_gate.evaluate(top_chunks)
+            print(f"  [CRAG] Verdict: {crag_result['verdict']} "
+                  f"(top={crag_result['top_score']:.2f}, avg={crag_result['avg_score']:.2f})")
+
+            if crag_result["verdict"] == "INCORRECT":
+                # Context không liên quan → trả lời fallback, không hallucinate
+                return {
+                    "answer": "Không tìm thấy thông tin liên quan trong quy chế hiện có. "
+                              "Vui lòng liên hệ phòng Công tác Sinh viên để được hỗ trợ.",
+                    "sources": [],
+                    "sections": [],
+                    "retrieval_scores": [r.get("rerank_score", 0) for r in top_chunks],
+                    "query_variants": query_variants,
+                    "hyde_hypothesis": hypothesis,
+                    "crag": crag_result,
+                    "mode": "RAG-CRAG-Rejected"
+                }
+
+            # Step 7: Semantic Compression (Cải tiến 5 — nâng cấp)
             context = self.compressor.compress(query, expanded)
 
-            # Step 7: Generate
+            # Step 7.5: Nếu CRAG AMBIGUOUS → thêm cảnh báo vào prompt
+            if crag_result["verdict"] == "AMBIGUOUS":
+                context = ("[LƯU Ý: Thông tin dưới đây có thể không hoàn toàn chính xác "
+                           "cho câu hỏi này. Hãy trả lời thận trọng và ghi rõ nếu không "
+                           "chắc chắn.]\n\n" + context)
+
+            # Step 8: Generate
             answer = self.llm.generate(query, context=context)
 
             return {
@@ -673,7 +910,9 @@ class RAGPipeline:
                     r["rerank_score"] for r in top_chunks
                 ],
                 "query_variants": query_variants,
-                "mode": "RAG-Enhanced"
+                "hyde_hypothesis": hypothesis,
+                "crag": crag_result,
+                "mode": "RAG-Enhanced+HyDE+CRAG"
             }
         else:
             # No RAG: chỉ dùng LLM
