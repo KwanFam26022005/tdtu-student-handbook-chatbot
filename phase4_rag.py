@@ -46,10 +46,14 @@ LLM_BASE = "Qwen/Qwen2.5-3B-Instruct"
 
 # System prompt
 SYSTEM_PROMPT = """Bạn là trợ lý AI chuyên về quy chế và sổ tay sinh viên Trường Đại học Tôn Đức Thắng (TDTU).
-Nhiệm vụ của bạn là trả lời câu hỏi của sinh viên một cách chính xác, rõ ràng và thân thiện.
+Nhiệm vụ của bạn là trả lời câu hỏi của sinh viên một cách chính xác, rõ ràng, CHI TIẾT và thân thiện.
 Hãy trả lời dựa HOÀN TOÀN vào ngữ cảnh được cung cấp bên dưới.
-Khi trả lời, hãy trích dẫn cụ thể tên văn bản, số điều, khoản trong quy chế.
-Nếu ngữ cảnh không chứa thông tin liên quan, hãy nói rõ "Không tìm thấy thông tin trong quy chế hiện có"."""
+
+Quy tắc trả lời:
+1. Liệt kê ĐẦY ĐỦ các điều kiện, bước, hoặc yêu cầu — KHÔNG tóm tắt hoặc chỉ dẫn đến mục khác.
+2. Trích dẫn cụ thể tên văn bản, số điều, khoản trong quy chế.
+3. Nếu có nhiều điều kiện, dùng danh sách đánh số (1, 2, 3...) để dễ đọc.
+4. Nếu ngữ cảnh không chứa thông tin liên quan, hãy nói rõ "Không tìm thấy thông tin trong quy chế hiện có"."""
 
 
 # ══════════════════════════════════════════════════════════
@@ -482,11 +486,12 @@ class SemanticCompressor:
         self.embed_model = embed_model
 
     def compress(
-        self, query: str, chunks: list[dict], max_sents_per_chunk: int = 5
+        self, query: str, chunks: list[dict], max_sents_per_chunk: int = 10
     ) -> str:
         """
         Build compressed context. Chọn câu theo cosine similarity với query,
         sau đó sắp xếp lại theo thứ tự gốc trong văn bản.
+        Chunk ngắn (<1500 chars) giữ nguyên toàn bộ — không compress.
         """
         context_parts = []
 
@@ -507,7 +512,13 @@ class SemanticCompressor:
                 header_parts.append(chunk["section"])
             header = " - ".join(header_parts)
 
-            sentences = re.split(r'(?<=[.;])\s+', chunk["text"])
+            # Chunk ngắn → giữ nguyên toàn bộ, không compress
+            chunk_text = chunk["text"]
+            if len(chunk_text) < 1500:
+                context_parts.append(f"{header}\n{chunk_text}")
+                continue
+
+            sentences = re.split(r'(?<=[.;])\s+', chunk_text)
             valid_sents = [
                 (i, s) for i, s in enumerate(sentences) if len(s.strip()) >= 15
             ]
