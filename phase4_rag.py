@@ -515,7 +515,7 @@ Hãy trả lời dựa trên ngữ cảnh trên."""
         with torch.no_grad():
             outputs = self.model.generate(
                 **inputs,
-                max_new_tokens=256,
+                max_new_tokens=512,
                 temperature=0.3,
                 top_p=0.9,
                 do_sample=True,
