@@ -323,6 +323,12 @@ def create_demo():
     def get_pipeline(use_finetuned):
         key = f"ft_{use_finetuned}"
         if key not in pipeline_cache:
+            # Giải phóng pipeline cũ để tránh OOM trên Colab T4 (15GB VRAM)
+            for old_key in list(pipeline_cache.keys()):
+                print(f"  [MEMORY] Đang dọn dẹp bộ nhớ pipeline cũ: {old_key}")
+                pipeline_cache[old_key].cleanup()
+                del pipeline_cache[old_key]
+                
             from phase4_rag import RAGPipeline
             pipeline_cache[key] = RAGPipeline(use_finetuned=use_finetuned)
         return pipeline_cache[key]
