@@ -352,6 +352,13 @@ def create_demo():
 
     with gr.Blocks(
         title=UI_TITLE,  # TDTU BRAND: browser tab title
+        theme=gr.themes.Soft(
+            primary_hue="blue",
+            secondary_hue="slate",
+            font=("Be Vietnam Pro", "Roboto", "sans-serif"),
+            font_mono=("Be Vietnam Pro", "monospace"),
+        ),
+        css=tdtu_css,
     ) as demo:
 
         # TDTU BRAND: Header — TDTU BLUE gradient, uppercase uni name, greeting
@@ -435,11 +442,4 @@ if __name__ == "__main__":
         share=True,      # Tạo public link (cho Colab)
         server_name="0.0.0.0",
         server_port=7860,
-        theme=gr.themes.Soft(
-            primary_hue="blue",
-            secondary_hue="slate",
-            font=("Be Vietnam Pro", "Roboto", "sans-serif"),
-            font_mono=("Be Vietnam Pro", "monospace"),
-        ),
-        css=tdtu_css,
     )
