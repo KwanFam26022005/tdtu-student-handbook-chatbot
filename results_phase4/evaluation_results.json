@@ -1,0 +1,42 @@
+{
+  "A": {
+    "config": "A",
+    "label": "LLM gốc, không RAG",
+    "bleu": 4.06,
+    "rouge_l": 26.37,
+    "bertscore_f1": 68.51,
+    "time_seconds": 859.2,
+    "num_samples": 50,
+    "recall_at_5": "N/A"
+  },
+  "B": {
+    "config": "B",
+    "label": "LLM gốc + RAG",
+    "bleu": 6.46,
+    "rouge_l": 27.38,
+    "bertscore_f1": 69.68,
+    "time_seconds": 1218.5,
+    "num_samples": 50,
+    "recall_at_5": 86.0
+  },
+  "C": {
+    "config": "C",
+    "label": "Fine-tuned, không RAG",
+    "bleu": 17.38,
+    "rouge_l": 43.68,
+    "bertscore_f1": 77.31,
+    "time_seconds": 481.1,
+    "num_samples": 50,
+    "recall_at_5": "N/A"
+  },
+  "D": {
+    "config": "D",
+    "label": "Fine-tuned + RAG",
+    "bleu": 18.53,
+    "rouge_l": 46.25,
+    "bertscore_f1": 77.93,
+    "time_seconds": 843.7,
+    "num_samples": 50,
+    "recall_at_5": 86.0
+  }
+}

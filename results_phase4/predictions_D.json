@@ -1,0 +1,602 @@
+[
+  {
+    "question": "Thủ tục để nhập học lại sau khi bị đình chỉ học tập có thời hạn như thế nào?",
+    "gold": "Sau khi hết thời hạn đình chỉ, bạn cần liên hệ với Khoa/Viện hoặc Phòng Sau đại học để làm thủ tục nhập học lại. (Điều 8, khoản 5c)",
+    "prediction": "Thủ tục để nhập học lại sau khi bị đình chỉ học tập có thời hạn không được nêu rõ trong văn bản này. Bạn nên liên hệ với Khoa/Viện để biết thêm chi tiết về thủ tục nhập học.",
+    "sources": [
+      "Quy chế quản lý người học trình độ thạc sĩ tiến sĩ",
+      "2021Quy chế tổ chức và quản lý đào tạo",
+      "Hướng dẫn học bổng khen thưởng hỗ trợ người học học bổng hỗ trợ cho cộng đồng và hỗ trợ khác năm học 2025 - 2026",
+      "Hướng dẫn học bổng khen thưởng hỗ trợ người học và hỗ trợ khác",
+      "Quy chế Công tác sinh viên"
+    ]
+  },
+  {
+    "question": "Thủ tục để xin học bổng cho sinh viên khuyết tật như thế nào?",
+    "gold": "Để xin học bổng cho sinh viên khuyết tật, bạn cần nộp đầy đủ hồ sơ theo thông báo của Nhà trường và có xác nhận hoàn cảnh khó khăn từ địa phương.",
+    "prediction": "Sinh viên khuyết tật cần nộp đầy đủ hồ sơ theo thông báo của Trường để được xem xét cấp học bổng từ 50% - 100% học phí theo khung chương trình đào tạo tiêu chuẩn năm học 2025 - 2026. (Điều kiện và mức xét cấp học bổng: Nhà trường cấp học bổng từ 50% - 100%)",
+    "sources": [
+      "Hướng dẫn học bổng khen thưởng hỗ trợ người học học bổng hỗ trợ cho cộng đồng và hỗ trợ khác năm học 2025 - 2026",
+      "Hướng dẫn học bổng khen thưởng hỗ trợ người học và hỗ trợ khác",
+      "Hướng dẫn học bổng khen thưởng hỗ trợ người học học bổng hỗ trợ cho cộng đồng và hỗ trợ khác năm học 2025 - 2026",
+      "Hướng dẫn học bổng khen thưởng hỗ trợ người học học bổng hỗ trợ cho cộng đồng và hỗ trợ khác năm học 2025 - 2026",
+      "Hướng dẫn học bổng khen thưởng hỗ trợ người học học bổng hỗ trợ cho cộng đồng và hỗ trợ khác năm học 2025 - 2026"
+    ]
+  },
+  {
+    "question": "Tại sao học phí cho các môn kỹ năng tiếng Anh lại cao như vậy?",
+    "gold": "Học phí cho các môn kỹ năng tiếng Anh cao do chương trình đào tạo yêu cầu nhiều tiết học và chất lượng giảng dạy. Điều này nhằm đảm bảo sinh viên có đủ kiến thức và kỹ năng cần thiết để sử dụng tiếng Anh hiệu quả.",
+    "prediction": "Học phí cho các môn kỹ năng tiếng Anh cao hơn vì chúng thường yêu cầu nhiều thời gian và chi phí để giảng dạy trực tiếp hoặc qua các kênh khác như MOOCs. Điều này nhằm đảm bảo chất lượng giáo dục và sự cập nhật về kiến thức.",
+    "sources": [
+      "quydinhhoanphi",
+      "quydinhhoanphi",
+      "quydinhhoanphi",
+      "quydinhhoanphi",
+      "quydinhhoanphi"
+    ]
+  },
+  {
+    "question": "Nếu em không đạt điểm xét tuyển 33.00/40.00 thì có được học bổng không?",
+    "gold": "Nếu bạn không đạt điểm xét tuyển tối thiểu 33.00/40.00, bạn sẽ không đủ điều kiện để được cấp học bổng toàn phần năm học 2025 - 2026. Điều này được quy định trong điều 2.2.",
+    "prediction": "Nếu sinh viên không đạt điểm xét tuyển 33.00/4\n4.00, thì sẽ không được cấp học bổng toàn phần (100% học phí) năm học 2024 - 2025 theo khung chương trình đào tạo tiêu chuẩn. Tuy nhiên, nếu sinh viên và trường THPT có học sinh đạt Thủ khoa, sinh viên có thể được cấp học bổng toàn phần (100% học phí). (Điều kiện và mức xét cấp học bổng)",
+    "sources": [
+      "Hướng dẫn học bổng khen thưởng hỗ trợ người học học bổng hỗ trợ cho cộng đồng và hỗ trợ khác năm học 2025 - 2026",
+      "Hướng dẫn học bổng khen thưởng hỗ trợ người học và hỗ trợ khác",
+      "Hướng dẫn học bổng khen thưởng hỗ trợ người học và hỗ trợ khác",
+      "Hướng dẫn học bổng khen thưởng hỗ trợ người học và hỗ trợ khác",
+      "Hướng dẫn học bổng khen thưởng hỗ trợ người học và hỗ trợ khác"
+    ]
+  },
+  {
+    "question": "Năm học 2024 - 2025 có bao nhiêu suất học bổng cho lưu học sinh?",
+    "gold": "Năm học 2024 - 2025 sẽ cấp 40 suất học bổng cho lưu học sinh, bao gồm 15 suất học bổng 100%, 15 suất học bổng 75% và 10 suất học bổng 50%.",
+    "prediction": "Năm học 2024 - 2025 cấp 90 suất học bổng cho lưu học sinh, trong đó có 40 suất học bổng 100%, 30 suất học bổng 75% và 20 suất học bổng 50% phí cho các năm học chương trình đại học theo quy định của ngành học tương ứng. Tất cả học bổng được cấp 100% học phí và phí ký túc xá cho năm học 2024 - 2025. (X.1)",
+    "sources": [
+      "Hướng dẫn học bổng khen thưởng hỗ trợ người học và hỗ trợ khác",
+      "Hướng dẫn học bổng khen thưởng hỗ trợ người học và hỗ trợ khác",
+      "Hướng dẫn học bổng khen thưởng hỗ trợ người học và hỗ trợ khác",
+      "Hướng dẫn học bổng khen thưởng hỗ trợ người học học bổng hỗ trợ cho cộng đồng và hỗ trợ khác năm học 2025 - 2026",
+      "Hướng dẫn học bổng khen thưởng hỗ trợ người học học bổng hỗ trợ cho cộng đồng và hỗ trợ khác năm học 2025 - 2026"
+    ]
+  },
+  {
+    "question": "Tại sao mình cần phải có kết quả học tập từ cơ sở khác để được miễn trừ?",
+    "gold": "Việc yêu cầu có kết quả học tập từ cơ sở khác nhằm đảm bảo rằng bạn đã có nền tảng kiến thức phù hợp với chương trình đào tạo hiện tại. Điều này giúp đảm bảo chất lượng đào tạo và sự đồng nhất trong đánh giá kết quả học phần. (Điều 4, khoản 1a)",
+    "prediction": "Sinh viên cần phải có kết quả học tập tích lũy từ cơ sở đào tạo khác để được miễn trừ và công nhận kết quả học tập, vì quy định này nhằm đảm bảo rằng các học phần được xét miễn đều có kết quả học tập tích lũy từ cơ sở đào tạo khác. (Điều 4, khoản a) trong [Quy dinh cong nhan ket qua hoc chi va chuyen doi tin chi].",
+    "sources": [
+      "Quy dinh cong nhan ket qua hoc chi va chuyen doi tin chi",
+      "Quy dinh cong nhan ket qua hoc chi va chuyen doi tin chi",
+      "Quy dinh cong nhan ket qua hoc chi va chuyen doi tin chi",
+      "2021Quy chế tổ chức và quản lý đào tạo",
+      "2021Quy chế tổ chức và quản lý đào tạo"
+    ]
+  },
+  {
+    "question": "Chứng nhận Cử nhân tư vấn được cấp cho ai?",
+    "gold": "Chứng nhận Cử nhân tư vấn được cấp cho sinh viên trình độ đại học/chuyên sâu đặc thù chương trình tiêu chuẩn, chương trình chất lượng cao, chương trình đại học bằng Tiếng Anh tại Trường Đại học Tôn Đức Thắng. (Điều 1)",
+    "prediction": "Chứng nhận Cử nhân tư vấn được cấp cho sinh viên tốt nghiệp trình độ đại học/chuyên sâu đặc thù đúng tiến độ hoặc trước tiến độ, đạt các tiêu chuẩn đầu ra về năng lực chuyên môn, kỹ năng nghề nghiệp và thái độ xã hội cao hơn tiêu chuẩn chung theo quy định của Trường. (Điều 3)",
+    "sources": [
+      "Quy định cử nhân ưu túap dung T9.2023",
+      "Quy định cử nhân ưu túap dung T9.2023",
+      "11.2457-QD cap chung nhan ky su cu nhan uu tu",
+      "11.2457-QD cap chung nhan ky su cu nhan uu tu",
+      "Quy định cử nhân ưu túap dung T9.2023"
+    ]
+  },
+  {
+    "question": "Tại sao sinh viên cần tuân thủ quy tắc ứng xử?",
+    "gold": "Sinh viên cần tuân thủ quy tắc ứng xử để đảm bảo môi trường học tập, nghiên cứu bình đẳng và công bằng. Việc này cũng giúp bảo vệ quyền và lợi ích hợp pháp của Nhà nước, Nhà trường và các tổ chức, cá nhân khác (Điều 1).",
+    "prediction": "Sinh viên cần tuân thủ quy tắc ứng xử để duy trì môi trường học tập văn minh, hiện đại và có chuẩn mực như quy định trong Bộ Quy tắc ứng xử của người học. Quy tắc này cũng giúp sinh viên tránh khỏi các hành vi vi phạm pháp luật và duy trì sự tôn trọng lẫn nhau trong quan hệ học tập.",
+    "sources": [
+      "Bộ Quy tắc ứng xử của người học",
+      "Bộ Quy tắc ứng xử của người học",
+      "Bộ Quy tắc ứng xử của người học",
+      "Quy chế Công tác sinh viên",
+      "TV-Hướng dẫn giao tiếp ứng xử cho người học"
+    ]
+  },
+  {
+    "question": "Thủ tục để xin học bổng có phức tạp không?",
+    "gold": "Đoạn văn bản không cung cấp thông tin chi tiết về thủ tục xin học bổng. Tuy nhiên, bạn nên tham khảo thêm từ phòng đào tạo hoặc trang web của trường để biết rõ hơn về quy trình này.",
+    "prediction": "Thủ tục xin học bổng không được nêu rõ trong văn bản này, tuy nhiên sinh viên cần nộp hồ sơ theo hướng dẫn dẫn cụ thể trong văn bản.",
+    "sources": [
+      "Hướng dẫn học bổng khen thưởng hỗ trợ người học và hỗ trợ khác",
+      "Hướng dẫn học bổng khen thưởng hỗ trợ người học và hỗ trợ khác",
+      "Hướng dẫn học bổng khen thưởng hỗ trợ người học và hỗ trợ khác",
+      "Hướng dẫn học bổng khen thưởng hỗ trợ người học và hỗ trợ khác",
+      "Hướng dẫn học bổng khen thưởng hỗ trợ người học học bổng hỗ trợ cho cộng đồng và hỗ trợ khác năm học 2025 - 2026"
+    ]
+  },
+  {
+    "question": "Thủ tục để tham gia các buổi hội thảo về kỹ năng nghề nghiệp như thế nào?",
+    "gold": "Em có thể theo dõi thông tin từ Trung tâm Hợp tác doanh nghiệp và Cựu sinh viên, nơi tổ chức các buổi chuyên đề, hội thảo về kỹ năng nghề nghiệp nhằm giúp sinh viên chuẩn bị tốt cho việc làm sau khi tốt nghiệp (Điều 23, khoản 3).",
+    "prediction": "Thủ tục để tham gia các buổi hội thảo về kỹ năng nghề nghiệp không được nêu rõ trong văn bản này. Bạn nên liên hệ với bộ phận quản lý học tập của trường để biết thêm chi tiết về quy trình cụ thể.",
+    "sources": [
+      "Quy chế đánh giá kết quả rèn luyện",
+      "Nội dung và thang điểm đánh giá rèn luyện trình độ đại học",
+      "15.2018 - Quy dinh ve hoat dong tap su nghe nghiep",
+      "15.2018 - Quy dinh ve hoat dong tap su nghe nghiep",
+      "quydinhhoanphi"
+    ]
+  },
+  {
+    "question": "Nếu mình có khiếu nại thì phải làm sao?",
+    "gold": "Bạn có thể gửi đơn khiếu nại đến Phòng Thanh tra, Pháp chế & An ninh, họ sẽ tiếp nhận và phối hợp với các Phòng/Ban chức năng để giải quyết (Điều 13.3).",
+    "prediction": "Nếu bạn có khiếu nại, bạn cần nộp đơn khiếu nại kèm theo các chứng cứ và giải trình tại Phòng Thanh tra, Phân tích và An ninh của Trường. Trong thời hạn 07 ngày làm việc kể từ ngày nhận đơn, Phòng Thanh tra sẽ tham định nội dung khiếu nại và báo cáo cho Hiệu trưởng. (Xem [Quy chế Công tác sinh viên] - Điều 8)",
+    "sources": [
+      "Quy chế Công tác sinh viên",
+      "2021Quy chế tổ chức và quản lý đào tạo",
+      "QĐ số 22 vv ban hành quy định kiểm soát và xử lý hành vi đạo văn các sản phẩm học thuật",
+      "Quy chế quản lý người học trình độ thạc sĩ tiến sĩ",
+      "QĐ số 22 vv ban hành quy định kiểm soát và xử lý hành vi đạo văn các sản phẩm học thuật"
+    ]
+  },
+  {
+    "question": "Tại sao sinh viên lại được cấp học bổng?",
+    "gold": "Sinh viên được cấp học bổng nhằm khuyến khích và hỗ trợ tài chính cho những người học có thành tích tốt hoặc gặp khó khăn trong việc chi trả học phí. Điều này giúp tạo động lực cho sinh viên trong quá trình học tập.",
+    "prediction": "Sinh viên được cấp học bổng nếu họ thỏa các điều kiện như học gián đoạn vì lý do sức khỏe, thực hiện nghĩa vụ quân sự, hoặc có quyết định thôi học hoặc nghỉ học tạm thời vì lý do cá nhân. Học bổng sẽ được cấp vào cuối kỳ/năm học tùy theo kết quả học tập và rèn luyện của sinh viên. (Điều 19)",
+    "sources": [
+      "Hướng dẫn học bổng khen thưởng hỗ trợ người học và hỗ trợ khác",
+      "Hướng dẫn học bổng khen thưởng hỗ trợ người học học bổng hỗ trợ cho cộng đồng và hỗ trợ khác năm học 2025 - 2026",
+      "Hướng dẫn học bổng khen thưởng hỗ trợ người học và hỗ trợ khác",
+      "Hướng dẫn học bổng khen thưởng hỗ trợ người học và hỗ trợ khác",
+      "Hướng dẫn học bổng khen thưởng hỗ trợ người học và hỗ trợ khác"
+    ]
+  },
+  {
+    "question": "Ai là người có trách nhiệm thi hành quy định về công nhận kết quả học tập và chuyển đổi tín chỉ?",
+    "gold": "Theo Điều 3, trách nhiệm thi hành quy định này thuộc về các Trưởng đơn vị như Phòng Đại học, Phòng Sau đại học, Phòng Khảo thí và Kiểm định chất lượng, Phòng Công tác sinh – sinh viên, và các Khoa, Phân hiệu Trường Đại học Tôn Đức Thắng tại tỉnh Khánh Hòa.",
+    "prediction": "Theo quy định, các đơn vị như Phòng Đại học, Phòng Sau đại học, Phòng Khảo thí và Kiểm định chất lượng, Phòng Công tác sinh – sinh viên, Phòng Tài chính, Phòng Thanh tra, pháp chế và an ninh, các Khoa, Phân hiệu Trường Đại học Tôn Đức Thắng tại tỉnh Khánh Hòa, các đơn vị trực thuộc Trường và sinh viên, học viên, nghiên cứu sinh có trách nhiệm thi hành quy định này. (Điều 3, khoản 1)",
+    "sources": [
+      "Quy dinh cong nhan ket qua hoc chi va chuyen doi tin chi",
+      "Quy dinh cong nhan ket qua hoc chi va chuyen doi tin chi",
+      "Quy dinh cong nhan ket qua hoc chi va chuyen doi tin chi",
+      "Quy dinh cong nhan ket qua hoc chi va chuyen doi tin chi",
+      "Quy dinh cong nhan ket qua hoc chi va chuyen doi tin chi"
+    ]
+  },
+  {
+    "question": "Nếu tôi không hoàn thành đủ tín chỉ thì có được tốt nghiệp không?",
+    "gold": "Nếu bạn không hoàn thành đủ tín chỉ, bạn sẽ không đủ điều kiện tốt nghiệp. Cụ thể, quy định về số tín chỉ cần thiết để tốt nghiệp không được đề cập trong văn bản này, nhưng bạn cần tham khảo thêm các quy định khác liên quan.",
+    "prediction": "Nếu không hoàn thành đủ tín chỉ, sinh viên sẽ không đủ điều kiện để được công nhận tốt nghiệp. Cụ thể, sinh viên phải tích lũy đủ số tín chỉ theo CTĐT và có điểm trung bình tích lũy tối thiểu để được công nhận tốt nghiệp. (Theo [2021Quy chế tổ chức và quản lý đào tạo] - Chương III - Điều 31)",
+    "sources": [
+      "2021Quy chế tổ chức và quản lý đào tạo",
+      "2021Quy chế tổ chức và quản lý đào tạo",
+      "2021Quy chế tổ chức và quản lý đào tạo",
+      "thongbaophuong an ha bac tot nghiepVE",
+      "thongbaophuong an ha bac tot nghiepVE"
+    ]
+  },
+  {
+    "question": "Tại sao mình phải tuân thủ cách ghi địa chỉ và email trong bài báo?",
+    "gold": "Bạn phải tuân thủ cách ghi địa chỉ và email trong bài báo theo quy định về công bố khoa học hiện hành của Trường để đảm bảo tính hợp lệ và chính xác của thông tin công bố. (Điều 3.4)",
+    "prediction": "Việc tuân thủ cách ghi địa chỉ và email trong bài báo là để đảm bảo rằng các bài báo được ghi nhận và quản lý đúng cách, như được quy định tại Quy định số 2980/QĐ-TĐT ngày 04/10/2023. Nếu không tuân thủ, có thể dẫn đến các vấn đề về quản lý và ghi nhận cho các bài báo.",
+    "sources": [
+      "Hướng dẫn học bổng khen thưởng hỗ trợ người học và hỗ trợ khác",
+      "Hướng dẫn học bổng khen thưởng hỗ trợ người học và hỗ trợ khác",
+      "Quy chế Công tác sinh viên",
+      "TV-Hướng dẫn giao tiếp ứng xử cho người học",
+      "Hướng dẫn học bổng khen thưởng hỗ trợ người học và hỗ trợ khác"
+    ]
+  },
+  {
+    "question": "Thủ tục để tổ chức đánh giá trực tuyến như thế nào?",
+    "gold": "Phòng Khảo thí sẽ xây dựng thủ tục quy trình và hướng dẫn việc tổ chức đánh giá trực tuyến nhằm đảm bảo thực hiện đúng theo quy định của trường.",
+    "prediction": "Thủ tục tổ chức đánh giá trực tuyến sẽ được Hiệu trưởng quyết định tùy theo tình hình cụ thể, nhưng phải đảm bảo theo đúng chuẩn đầu ra và mục tiêu môn học. Việc tổ chức sẽ được thực hiện theo quy định của Trường và cần có sự đồng ý của Hiệu trưởng về hình thức và mức độ đánh giá. (Theo [2021Quy chế tổ chức và quản lý đào tạo] - Chương III - Điều 21)",
+    "sources": [
+      "2021Quy chế tổ chức và quản lý đào tạo",
+      "QĐ.2033QĐ ứng dụng về ứng dụng công nghệ trong tổ chức và quản lý các hoạt động giáo dục",
+      "QĐ.2033QĐ ứng dụng về ứng dụng công nghệ trong tổ chức và quản lý các hoạt động giáo dục",
+      "QĐ.2033QĐ ứng dụng về ứng dụng công nghệ trong tổ chức và quản lý các hoạt động giáo dục",
+      "QĐ.2033QĐ ứng dụng về ứng dụng công nghệ trong tổ chức và quản lý các hoạt động giáo dục"
+    ]
+  },
+  {
+    "question": "Điểm tập sự nghề nghiệp của mình được quy đổi như thế nào?",
+    "gold": "Điểm tập sự nghề nghiệp được quy đổi theo thang điểm rèn luyện. Nếu bạn đạt từ 9,0 trở lên, bạn sẽ được 80 điểm. Từ 8,0 đến dưới 9,0 là 70 điểm, và cứ thế cho đến dưới 5,0 thì bạn sẽ được 00 điểm.",
+    "prediction": "Điểm tập sự nghề nghiệp được quy đổi thành điểm rèn luyện tùy thuộc vào mức độ hoàn thành nhiệm vụ và trách nhiệm của sinh viên trong quá trình tập sự. Cụ thể, mức độ hoàn thành sẽ được quy đổi thành các mức điểm khác nhau, từ 80 điểm cho mức hoàn thành xuất sắc đến 00 điểm cho mức hoàn thành kém. (Điều 15, Chương IV)",
+    "sources": [
+      "Nội dung và thang điểm đánh giá rèn luyện trình độ đại học",
+      "Quy chế đánh giá kết quả rèn luyện",
+      "Quy chế đánh giá kết quả rèn luyện",
+      "15.2018 - Quy dinh ve hoat dong tap su nghe nghiep",
+      "Quy chế đánh giá kết quả rèn luyện"
+    ]
+  },
+  {
+    "question": "Cán bộ coi thi cần chuẩn bị gì trước khi vào phòng thi trực tuyến?",
+    "gold": "Cán bộ coi thi cần có danh sách ảnh của thí sinh và danh sách thí sinh thuộc phòng thi mình coi. Ngoài ra, cần đảm bảo trang thiết bị như máy tính có camera, tai nghe, micro và kết nối mạng ổn định. (Điều 3, Khoản A1)",
+    "prediction": "CBCT cần chuẩn bị các trang thiết bị như thư mục email, đường dẫn vào phòng thi trực tuyến, và có danh sách ảnh của TS để kiểm tra. Họ cũng cần chuẩn bị một khu vực thi có kết nối mạng ổn định và không có người khác trong suốt quá trình thi, ngoại trừ TS có lý do chính đáng (Điều 3, khoản 1).",
+    "sources": [
+      "QD 2793 - Nội quy thi trực tuyến 19.9.2023",
+      "QD 2793 - Nội quy thi trực tuyến 19.9.2023",
+      "25.2020-Noi quy phong thi",
+      "25.2020-Noi quy phong thi",
+      "25.2020-Noi quy phong thi"
+    ]
+  },
+  {
+    "question": "Nếu mình không tham gia tập sự nghề nghiệp thì có sao không?",
+    "gold": "Nếu sinh viên không tham gia tập sự nghề nghiệp theo đúng lộ trình đào tạo chuẩn, sinh viên sẽ tham gia hoạt động bình thường và được đánh giá rèn luyện theo đúng lộ trình đào tạo, theo Điều 10, khoản 3.",
+    "prediction": "Nếu không tham gia tập sự nghề nghiệp theo đúng lộ trình đào tạo, sinh viên sẽ tham gia các hoạt động bình thường và đánh giá rèn luyện sẽ được tính theo lộ trình đào tạo bình thường. (Điều 15.2018)",
+    "sources": [
+      "Nội dung và thang điểm đánh giá rèn luyện trình độ đại học",
+      "Quy chế đánh giá kết quả rèn luyện",
+      "15.2018 - Quy dinh ve hoat dong tap su nghe nghiep",
+      "QĐ số 22 vv ban hành quy định kiểm soát và xử lý hành vi đạo văn các sản phẩm học thuật",
+      "Quy chế đánh giá kết quả rèn luyện"
+    ]
+  },
+  {
+    "question": "Học bổng được phân bổ như thế nào?",
+    "gold": "Việc phân bổ học bổng khuyến khích học tập và số suất học bổng theo khóa học, ngành học được xác định căn cứ theo tỷ lệ sinh viên đang học của Khoa, của ngành, của khóa học. (Điều d)",
+    "prediction": "Hội đồng xét cấp học bổng sẽ phân bổ số lượng học bổng cụ thể cho từng Khoa/Nghành dựa trên số lượng hồ sơ mà sinh viên đăng ký. Học bổng được xét cấp theo thứ tự ưu tiên từ cao xuống theo các tiêu chuẩn như điểm học tập và khả năng hoàn thành khóa học. (Điều 5.2.2)",
+    "sources": [
+      "Hướng dẫn học bổng khen thưởng hỗ trợ người học học bổng hỗ trợ cho cộng đồng và hỗ trợ khác năm học 2025 - 2026",
+      "Hướng dẫn học bổng khen thưởng hỗ trợ người học và hỗ trợ khác",
+      "Hướng dẫn học bổng khen thưởng hỗ trợ người học và hỗ trợ khác",
+      "Hướng dẫn học bổng khen thưởng hỗ trợ người học và hỗ trợ khác",
+      "Hướng dẫn học bổng khen thưởng hỗ trợ người học và hỗ trợ khác"
+    ]
+  },
+  {
+    "question": "Tại sao sinh viên phải đạt kết quả học tập từ 5.0 mới được cấp học bổng?",
+    "gold": "Sinh viên phải đạt kết quả học tập từ 5.0 để đảm bảo rằng họ có thành tích học tập tốt và đủ điều kiện nhận học bổng, nhằm khuyến khích việc học tập nghiêm túc.",
+    "prediction": "Sinh viên phải đạt kết quả học tập từ 5.0 để đảm bảo rằng họ có kết quả học tập tốt và có cơ hội được cấp học bổng, đặc biệt là trong các loại học bổng như học bổng tân sinh viên và học bổng hỗ trợ cho cộng đồng. Nếu kết quả học tập thấp hơn, sinh viên có thể không đủ điều kiện để nhận học bổng.",
+    "sources": [
+      "Hướng dẫn học bổng khen thưởng hỗ trợ người học và hỗ trợ khác",
+      "Hướng dẫn học bổng khen thưởng hỗ trợ người học học bổng hỗ trợ cho cộng đồng và hỗ trợ khác năm học 2025 - 2026",
+      "Hướng dẫn học bổng khen thưởng hỗ trợ người học học bổng hỗ trợ cho cộng đồng và hỗ trợ khác năm học 2025 - 2026",
+      "Hướng dẫn học bổng khen thưởng hỗ trợ người học và hỗ trợ khác",
+      "Hướng dẫn học bổng khen thưởng hỗ trợ người học và hỗ trợ khác"
+    ]
+  },
+  {
+    "question": "Nếu mình bị ghi nhận lỗi ở mức 1 trong môn thi, nhưng vẫn vi phạm thêm lỗi khác thì có bị đình chỉ thi không?",
+    "gold": "Có, nếu bạn đã bị ghi nhận lỗi ở mức 1 một lần trong môn thi đó và tiếp tục vi phạm thêm một lỗi khác theo mục 2.1, bạn sẽ bị đình chỉ thi. Điều này được quy định tại Điều 04, mục 3, khoản a.",
+    "prediction": "Nếu bạn bị ghi nhận lỗi ở mức 1 trong môn thi và tiếp tục vi phạm thêm lỗi khác, bạn sẽ bị xử lý kỷ luật theo quy định của Nhà trường. Quy trình xử lý cụ thể sẽ được CBCT lập biên bản và ghi chú vào danh sách thu bài thi (theo mục 2.1.a trong Điều 04).",
+    "sources": [
+      "25.2020-Noi quy phong thi",
+      "25.2020-Noi quy phong thi",
+      "Phụ lục một số nội dung vi phạm và hình thức xử lý người học trình độ thạc sĩ tiến sĩ",
+      "QD 2793 - Nội quy thi trực tuyến 19.9.2023",
+      "Phụ lục một số nội dung vi phạm và hình thức xử lý người học trình độ thạc sĩ tiến sĩ"
+    ]
+  },
+  {
+    "question": "Học phí môn Giáo dục thể chất là bao nhiêu?",
+    "gold": "Học phí môn Giáo dục thể chất là 510.000 đồng/tín chỉ cho cả lý thuyết và thực hành.",
+    "prediction": "Học phí môn Giáo dục thể chất là 510.000 đồng/tín chỉ lý thuyết và 510.000 đồng/tín chỉ thực hành.",
+    "sources": [
+      "quydinhhoanphi",
+      "quydinhhoanphi",
+      "quydinhhoanphi",
+      "quydinhhoanphi",
+      "quydinhhoanphi"
+    ]
+  },
+  {
+    "question": "Để được cấp học bổng sau đại học, mình cần điều kiện gì?",
+    "gold": "Để được cấp học bổng, học viên phải là cựu sinh viên tốt nghiệp loại giỏi của trường đại học công lập khác và phải dự tuyển trong vòng 01 năm sau khi tốt nghiệp. Ngoài ra, giáo viên đang giảng dạy tại các trường phổ thông cũng có thể xin học bổng nếu có giấy giới thiệu từ trường phổ thông.",
+    "prediction": "Để được cấp học bổng sau đại học, sinh viên cần thỏa mãn các điều kiện như là cựu sinh viên tốt nghiệp loại giỏi từ các trường đại học khác, trúng tuyển và nhập học tại TDTU trong vòng một năm, và nộp đầy hồ sơ xin cấp học bổng. (Theo Điều kiện và mức xét cấp học bổng trong hướng dẫn.)",
+    "sources": [
+      "Hướng dẫn học bổng khen thưởng hỗ trợ người học và hỗ trợ khác",
+      "Hướng dẫn học bổng khen thưởng hỗ trợ người học và hỗ trợ khác",
+      "Hướng dẫn học bổng khen thưởng hỗ trợ người học học bổng hỗ trợ cho cộng đồng và hỗ trợ khác năm học 2025 - 2026",
+      "Hướng dẫn học bổng khen thưởng hỗ trợ người học và hỗ trợ khác",
+      "Hướng dẫn học bổng khen thưởng hỗ trợ người học và hỗ trợ khác"
+    ]
+  },
+  {
+    "question": "Thủ tục xin bảo lưu học tập như thế nào?",
+    "gold": "Để xin bảo lưu học tập, sinh viên cần nộp đơn xin bảo lưu kèm theo các giấy tờ liên quan đến lý do bảo lưu. Quy trình cụ thể được quy định trong Quy chế tổ chức quản lý đào tạo trình độ đại học.",
+    "prediction": "Trong văn bản này không có thông tin cụ thể về thủ tục xin bảo lưu học tập. Bạn nên tham khảo thêm quy định cụ thể từ Hiệu trưởng hoặc Phòng Tài chính để biết rõ thủ tục và các yêu cầu cần thiết.",
+    "sources": [
+      "Hướng dẫn học bổng khen thưởng hỗ trợ người học và hỗ trợ khác",
+      "2021Quy chế tổ chức và quản lý đào tạo",
+      "Hướng dẫn học bổng khen thưởng hỗ trợ người học và hỗ trợ khác",
+      "Hướng dẫn học bổng khen thưởng hỗ trợ người học học bổng hỗ trợ cho cộng đồng và hỗ trợ khác năm học 2025 - 2026",
+      "Hướng dẫn học bổng khen thưởng hỗ trợ người học học bổng hỗ trợ cho cộng đồng và hỗ trợ khác năm học 2025 - 2026"
+    ]
+  },
+  {
+    "question": "Điểm thi kết thúc môn học được ghi nhận như thế nào?",
+    "gold": "Điểm thi kết thúc môn học được ghi nhận theo thang điểm 10, làm tròn đến 01 chữ số thập phân. Điểm môn học là tổng các điểm thành phần, tính theo trọng số quy định.",
+    "prediction": "Điểm thi kết thúc môn học và điểm đánh giá môn học được ghi nhận theo thang điểm 10, làm tròn đến 01 chữ số thập phân. (Xem [2021Quy chế tổ chức và quản lý đào tạo] - Chương III - Điều 23)",
+    "sources": [
+      "2021Quy chế tổ chức và quản lý đào tạo",
+      "2021Quy chế tổ chức và quản lý đào tạo",
+      "2021Quy chế tổ chức và quản lý đào tạo",
+      "2021Quy chế tổ chức và quản lý đào tạo",
+      "2021Quy chế tổ chức và quản lý đào tạo"
+    ]
+  },
+  {
+    "question": "Nếu mình có điểm thi THPT cao nhưng không được học bổng thì sao?",
+    "gold": "Nếu có nhiều tân sinh viên thỏa điều kiện học bổng và có cùng mức điểm xét học bổng, sẽ ưu tiên xét học bổng theo tổng điểm thi THPT của từng môn Toán và Văn. Nếu vẫn còn cùng mức điểm, suất học bổng sẽ được chia đều cho các sinh viên thỏa điều kiện.",
+    "prediction": "Nếu bạn có điểm xét tuyển cao nhất nhưng không được học bổng, bạn sẽ không được cấp học bổng này. Học bổng dành cho sinh viên có điểm xét tuyển cao nhất sẽ được cấp 100% học phí nếu bạn trúng tuyển và nhập học tại Phân hiệu trong đợt tuyển sinh đại học năm 2024. (Điều kiện và mức xét cấp học bổng)",
+    "sources": [
+      "Hướng dẫn học bổng khen thưởng hỗ trợ người học và hỗ trợ khác",
+      "Hướng dẫn học bổng khen thưởng hỗ trợ người học và hỗ trợ khác",
+      "Hướng dẫn học bổng khen thưởng hỗ trợ người học và hỗ trợ khác",
+      "Hướng dẫn học bổng khen thưởng hỗ trợ người học học bổng hỗ trợ cho cộng đồng và hỗ trợ khác năm học 2025 - 2026",
+      "Hướng dẫn học bổng khen thưởng hỗ trợ người học và hỗ trợ khác"
+    ]
+  },
+  {
+    "question": "Mình cần chuẩn bị những gì để xin học bổng?",
+    "gold": "Để xin học bổng, bạn cần chuẩn bị hồ sơ bao gồm: Đơn đề nghị cấp học bổng theo mẫu của Trường, bản sao có chứng thực văn bằng và bảng điểm tốt nghiệp, và danh mục cùng bản sao các bài báo khoa học đã công bố hoặc bản sao có chứng bằng sáng chế. (Điều 3.3)",
+    "prediction": "Để xin học bổng, bạn cần chuẩn bị các loại hồ sơ như đơn đề nghị cấp học bổng, bản sao có chứng thực văn bằng và bảng điểm tốt nghiệp, danh mục và bản sao các bài báo khoa học đã công bố nếu bạn là tác giả, và tùy thuộc vào loại học bổng mà bạn cần chuẩn bị thêm các tài liệu khác. Bạn nên tham khảo cụ thể tại hướng dẫn trong quy chế. (Trích từ [Hướng dẫn học bổng khen thưởng hỗ trợ người học và hỗ trợ khác])",
+    "sources": [
+      "Hướng dẫn học bổng khen thưởng hỗ trợ người học và hỗ trợ khác",
+      "Hướng dẫn học bổng khen thưởng hỗ trợ người học và hỗ trợ khác",
+      "Hướng dẫn học bổng khen thưởng hỗ trợ người học và hỗ trợ khác",
+      "Hướng dẫn học bổng khen thưởng hỗ trợ người học và hỗ trợ khác",
+      "Hướng dẫn học bổng khen thưởng hỗ trợ người học và hỗ trợ khác"
+    ]
+  },
+  {
+    "question": "Có những hành vi nào mà sinh viên không được làm?",
+    "gold": "Những hành vi sinh viên không được làm được liệt kê trong Phụ lục “Những điều sinh viên không được làm; Nội dung vi phạm và hình thức xử lý sinh viên”. Nếu vi phạm những nội dung này, Hội đồng kỷ luật sẽ xử lý theo quy định (Điều 8, khoản 2b).",
+    "prediction": "Sinh viên không được làm những hành vi như: mang đồ ăn, thức uống vào phòng học, thư viện; sử dụng đồ ăn, thức uống trong phòng học, thư viện; ngồi, chạy nhảy trên bàn trong phòng học, thư viện; tự ý vào lớp khi giờ học đã bắt đầu; tự ý rời khỏi lớp không được sự cho phép của giảng viên; tự ý rời khỏi phòng học, giảng đường trong giờ học, nghiên cứu, học tập; viết, vẽ khác chữ trên tường, cửa, bàn trong phòng học, thư viện; tặng quà, tiền, phẩm vật cho giảng viên; vi phạm quyền tác giả với tác phẩm; sử dụng từ ngữ không đúng trong mạng xã hội và các phương tiện truyền thông khác; tổ chức, tham gia các hoạt động có tính chất chính trị trái phép trong Trường; và các hành vi khác được liệt kê trong Phụ lục \"Những điều sinh viên không được làm\".",
+    "sources": [
+      "Quy chế Công tác sinh viên",
+      "PHỤ LỤC NHỮNG ĐIỀU SINH VIÊN KHÔNG ĐƯỢC LÀM NỘI DUNG VI PHẠM VÀ HÌNH THỨC XỬ LÝ SINH VIÊN",
+      "Quy chế Công tác sinh viên",
+      "Quy chế quản lý người học trình độ thạc sĩ tiến sĩ",
+      "Quy chế Công tác sinh viên"
+    ]
+  },
+  {
+    "question": "Tại sao học sinh đạt giải ba lại chỉ được học bổng 50%?",
+    "gold": "Học sinh đạt giải ba trong kỳ thi chọn học sinh giỏi cấp quốc gia và cuộc thi nghiên cứu khoa học kỹ thuật cấp quốc gia chỉ được cấp học bổng 50% học phí vì đây là mức hỗ trợ thấp hơn so với các giải cao hơn như giải nhì hoặc giải ba quốc tế. (Điều 11.2)",
+    "prediction": "Học sinh đạt giải ba trở lên ở các kỳ thi như Olympic Quốc tế, Cuộc thi NCKH Quốc tế sẽ được cấp học bổng 50% học phí năm học 2025 - 2026 theo khung chương trình đào tạo tiêu chuẩn. Trong khi đó, học sinh đạt giải nhì ở các kỳ thi này sẽ được cấp học bổng 75%. (Điều kiện và mức xét cấp học bổng: Sinh viên có điểm trung bình tích lũy từ 8.0 trở lên).",
+    "sources": [
+      "Hướng dẫn học bổng khen thưởng hỗ trợ người học học bổng hỗ trợ cho cộng đồng và hỗ trợ khác năm học 2025 - 2026",
+      "Hướng dẫn học bổng khen thưởng hỗ trợ người học học bổng hỗ trợ cho cộng đồng và hỗ trợ khác năm học 2025 - 2026",
+      "Hướng dẫn học bổng khen thưởng hỗ trợ người học và hỗ trợ khác",
+      "Hướng dẫn học bổng khen thưởng hỗ trợ người học và hỗ trợ khác",
+      "Hướng dẫn học bổng khen thưởng hỗ trợ người học và hỗ trợ khác"
+    ]
+  },
+  {
+    "question": "Nếu mình học ngành Quản trị kinh doanh mà không đạt yêu cầu thì sao?",
+    "gold": "Nếu sinh viên không đạt yêu cầu học tập, có thể bị cảnh báo học vụ theo quy định. Cụ thể, nếu điểm trung bình tích lũy dưới mức quy định, sinh viên sẽ nhận thông báo cảnh báo và cần cải thiện kết quả học tập.",
+    "prediction": "Nếu bạn học ngành Quản trị kinh doanh và không đạt yêu cầu, bạn sẽ bị xử lý theo quy định tại khoản 6 Điều 25 của Quy chế tổ chức và quản lý đào tạo. Bạn có thể bị xem xét tổ chức lớp ôn tập và đánh giá môn học nếu điểm tối đa là 5,0 điểm.",
+    "sources": [
+      "2021Quy chế tổ chức và quản lý đào tạo",
+      "2021Quy chế tổ chức và quản lý đào tạo",
+      "quydinhhoanphi",
+      "quydinhhoanphi",
+      "2021Quy chế tổ chức và quản lý đào tạo"
+    ]
+  },
+  {
+    "question": "Thủ tục để xin học bổng như thế nào?",
+    "gold": "Thủ tục xin học bổng bao gồm việc nộp hồ sơ đăng ký vào các Khoa/Nghành thực tế hằng năm. Sau đó, Hội đồng xét học bổng sẽ phân bổ số lượng học bổng dựa trên các tiêu chuẩn đã được quy định.",
+    "prediction": "Để xin học bổng, bạn cần nộp hồ sơ theo mẫu của Trường và các tài liệu kèm theo, như đơn xin dự tuyển, lý lịch khoa học, bản sao bằng tốt nghiệp và bảng điểm có công chứng, và danh mục bài báo khoa học nếu bạn là tác giả ghi tên. Bạn cũng nên kiểm tra quy định cụ thể tại hướng dẫn cho từng loại học bổng.",
+    "sources": [
+      "Hướng dẫn học bổng khen thưởng hỗ trợ người học và hỗ trợ khác",
+      "Hướng dẫn học bổng khen thưởng hỗ trợ người học và hỗ trợ khác",
+      "Hướng dẫn học bổng khen thưởng hỗ trợ người học và hỗ trợ khác",
+      "Hướng dẫn học bổng khen thưởng hỗ trợ người học và hỗ trợ khác",
+      "Hướng dẫn học bổng khen thưởng hỗ trợ người học và hỗ trợ khác"
+    ]
+  },
+  {
+    "question": "Thủ tục xin bảo lưu học tập như thế nào?",
+    "gold": "Trong văn bản này không đề cập đến thủ tục xin bảo lưu học tập. Bạn nên tham khảo quy định riêng về bảo lưu tại trường hoặc hỏi trực tiếp phòng đào tạo để biết thêm chi tiết.",
+    "prediction": "Thủ tục xin bảo lưu kết quả học tập không được nêu rõ trong văn bản này. Bạn nên tham khảo thêm quy định cụ thể từ Hiệu trưởng hoặc Khoa để biết chi tiết về thủ tục và các yêu cầu cần thiết.",
+    "sources": [
+      "Hướng dẫn học bổng khen thưởng hỗ trợ người học và hỗ trợ khác",
+      "2021Quy chế tổ chức và quản lý đào tạo",
+      "Hướng dẫn học bổng khen thưởng hỗ trợ người học và hỗ trợ khác",
+      "Hướng dẫn học bổng khen thưởng hỗ trợ người học học bổng hỗ trợ cho cộng đồng và hỗ trợ khác năm học 2025 - 2026",
+      "Hướng dẫn học bổng khen thưởng hỗ trợ người học học bổng hỗ trợ cho cộng đồng và hỗ trợ khác năm học 2025 - 2026"
+    ]
+  },
+  {
+    "question": "Tại sao sinh viên lại được chia đều học bổng nếu đạt cùng tiêu chí?",
+    "gold": "Học bổng sẽ được chia đều cho các sinh viên thỏa điều kiện nếu họ tiếp tục đạt cùng tiêu chí phụ, nhằm đảm bảo công bằng và khuyến khích tất cả sinh viên nỗ lực học tập. (Điều 5.2)",
+    "prediction": "Sinh viên sẽ được chia đều học bổng nếu sau khi xét các điều kiện ưu tiên học bổng mà vẫn có cùng mức điểm xét học bổng. Điều này nhằm đảm bảo rằng học bổng được phân chia đều cho những sinh viên thỏa điều kiện (Điều 5.2).",
+    "sources": [
+      "Hướng dẫn học bổng khen thưởng hỗ trợ người học và hỗ trợ khác",
+      "Hướng dẫn học bổng khen thưởng hỗ trợ người học và hỗ trợ khác",
+      "Hướng dẫn học bổng khen thưởng hỗ trợ người học và hỗ trợ khác",
+      "Hướng dẫn học bổng khen thưởng hỗ trợ người học học bổng hỗ trợ cho cộng đồng và hỗ trợ khác năm học 2025 - 2026",
+      "Hướng dẫn học bổng khen thưởng hỗ trợ người học và hỗ trợ khác"
+    ]
+  },
+  {
+    "question": "Nếu mình học ngành Mỹ thuật ứng dụng mà bị cảnh báo học vụ thì phải làm sao?",
+    "gold": "Nếu bị cảnh báo học vụ, sinh viên cần phải xem xét lại kết quả học tập và có thể phải tham gia các buổi tư vấn học tập để cải thiện tình hình. Tuy nhiên, quy định cụ thể về cảnh báo học vụ không được đề cập trong đoạn văn này.",
+    "prediction": "Nếu sinh viên bị cảnh báo học vụ, cần phải cải thiện kết quả học tập trong các học kỳ tiếp theo để tránh bị buộc thôi học. Theo quy định, sinh viên sẽ bị cảnh báo nếu không đạt kết quả học tập đủ cao trong một thời gian nhất định.",
+    "sources": [
+      "2021Quy chế tổ chức và quản lý đào tạo",
+      "2021Quy chế tổ chức và quản lý đào tạo",
+      "Phụ lục một số nội dung vi phạm và hình thức xử lý người học trình độ thạc sĩ tiến sĩ",
+      "2021Quy chế tổ chức và quản lý đào tạo",
+      "2021Quy chế tổ chức và quản lý đào tạo"
+    ]
+  },
+  {
+    "question": "Nếu mình không tham gia hoạt động đã đăng ký thì có bị trừ điểm không?",
+    "gold": "Có, nếu bạn không tham gia hoạt động đã đăng ký, bạn sẽ bị trừ 05 điểm theo quy định tại Điều 4 của quy chế đánh giá kết quả rèn luyện.",
+    "prediction": "Nếu sinh viên không tham gia các hoạt động đã đăng ký, sẽ bị trừ 05 điểm cho mỗi lần không tham gia, như quy định tại điều 3 của văn bản này.",
+    "sources": [
+      "Quy chế đánh giá kết quả rèn luyện",
+      "Nội dung và thang điểm đánh giá rèn luyện trình độ đại học",
+      "Quy chế đánh giá kết quả rèn luyện",
+      "2021Quy chế tổ chức và quản lý đào tạo",
+      "Nội dung và thang điểm đánh giá rèn luyện trình độ đại học"
+    ]
+  },
+  {
+    "question": "Quy định mới về đánh giá học phần tiếng Anh có gì khác không?",
+    "gold": "Quy định mới bổ sung về việc đánh giá và ghi nhận kết quả các học phần tiếng Anh dự bị đối với sinh viên trình độ đại học. Điều này áp dụng cho cả chương trình tiêu chuẩn và chương trình chất lượng cao.",
+    "prediction": "Quy định mới về đánh giá học phần tiếng Anh bổ sung quy định rằng sinh viên chỉ được xét điều kiện dự kiến cuối kỳ khi đạt mức điểm đánh giá quá trình tối thiểu yêu cầu của từng cấp độ. Điều này khác biệt so với các quy định trước đây.",
+    "sources": [
+      "QĐ.457.2026Sửa đổi bổ sung Quy định tiếng Anh2024 trở về trước",
+      "QĐ-T.ANH-TC-2023-SÔ 3728",
+      "QĐ.457.2026Sửa đổi bổ sung Quy định tiếng Anh2024 trở về trước",
+      "QĐ.457.2026Sửa đổi bổ sung Quy định tiếng Anh2024 trở về trước",
+      "QĐ.457.2026Sửa đổi bổ sung Quy định tiếng Anh2024 trở về trước"
+    ]
+  },
+  {
+    "question": "Tại sao mình cần phải có Quyết định công nhận Cử nhân/Kỹ sư ưu tú?",
+    "gold": "Quyết định công nhận là điều kiện cần thiết để Phòng khảo thí và Kiểm định chất lượng có thể in Giấy chứng nhận. Nếu không có quyết định này, bạn sẽ không thể nhận được giấy chứng nhận. (Điều 3, khoản 4)",
+    "prediction": "Theo quy định, Quyết định công nhận Cử nhân/Kỹ sư ưu tú sẽ được Hiệu trưởng xem xét và quyết định cấp cho các sinh viên tốt nghiệp trình độ đại học/chuyên sâu đúng tiến độ hoặc trước tiến độ, phù hợp với các tiêu chuẩn đầu ra về năng lực chuyên môn, kỹ năng nghề nghiệp và thái độ xã hội cao hơn tiêu chuẩn chung của Trường. (Điều 3, khoản 1)",
+    "sources": [
+      "Quy định cử nhân ưu túap dung T9.2023",
+      "11.2457-QD cap chung nhan ky su cu nhan uu tu",
+      "11.2457-QD cap chung nhan ky su cu nhan uu tu",
+      "11.2457-QD cap chung nhan ky su cu nhan uu tu",
+      "11.2457-QD cap chung nhan ky su cu nhan uu tu"
+    ]
+  },
+  {
+    "question": "Thủ tục để xin hỗ trợ học phí như thế nào?",
+    "gold": "Để xin hỗ trợ học phí, bạn cần liên hệ với Khoa hoặc Phòng Công tác học sinh - sinh viên để được hướng dẫn cụ thể về thủ tục và các giấy tờ cần thiết. Họ sẽ giúp bạn trình bày ý kiến và quyết định sẽ được Hiệu trưởng xem xét.",
+    "prediction": "Thủ tục xin hỗ trợ học phí không được nêu rõ trong văn bản này, nhưng bạn cần đảm bảo rằng mình hoàn thành nghĩa vụ học phí và có kết quả học tập/tương lai tốt. Nếu không, bạn có thể không được hỗ trợ.",
+    "sources": [
+      "Hướng dẫn học bổng khen thưởng hỗ trợ người học học bổng hỗ trợ cho cộng đồng và hỗ trợ khác năm học 2025 - 2026",
+      "Hướng dẫn học bổng khen thưởng hỗ trợ người học học bổng hỗ trợ cho cộng đồng và hỗ trợ khác năm học 2025 - 2026",
+      "Hướng dẫn học bổng khen thưởng hỗ trợ người học và hỗ trợ khác",
+      "Hướng dẫn học bổng khen thưởng hỗ trợ người học học bổng hỗ trợ cho cộng đồng và hỗ trợ khác năm học 2025 - 2026",
+      "Hướng dẫn học bổng khen thưởng hỗ trợ người học và hỗ trợ khác"
+    ]
+  },
+  {
+    "question": "Nếu tôi không nhận được kế hoạch giảng dạy trước 3 ngày thì sao?",
+    "gold": "Nếu bạn không nhận được kế hoạch giảng dạy đúng thời hạn, bạn nên liên hệ với giảng viên hoặc bộ phận quản lý để yêu cầu thông tin cần thiết, vì đây là quy định bắt buộc.",
+    "prediction": "Nếu bạn không nhận được kế hoạch giảng dạy trước 3 ngày, bạn nên kiểm tra lại quy trình cung cấp thông tin cho người học. Quy định nêu rõ rằng thông tin về kế hoạch giảng dạy và học tập phải được cung cấp cho người học trước khi môn học bắt đầu. Nếu không, bạn có thể phản hồi với bộ phận quản lý để khắc phục tình trạng này. (Theo QĐ.2033QĐ)",
+    "sources": [
+      "QĐ.2033QĐ ứng dụng về ứng dụng công nghệ trong tổ chức và quản lý các hoạt động giáo dục",
+      "QĐ.2033QĐ ứng dụng về ứng dụng công nghệ trong tổ chức và quản lý các hoạt động giáo dục",
+      "QĐ.2033QĐ ứng dụng về ứng dụng công nghệ trong tổ chức và quản lý các hoạt động giáo dục",
+      "QĐ.2033QĐ ứng dụng về ứng dụng công nghệ trong tổ chức và quản lý các hoạt động giáo dục",
+      "2021Quy chế tổ chức và quản lý đào tạo"
+    ]
+  },
+  {
+    "question": "Nếu Lớp trưởng không làm tốt nhiệm vụ thì sao?",
+    "gold": "Nếu Lớp trưởng không hoàn thành nhiệm vụ, có thể bị miễn nhiệm. Điều này được quy định trong quy trình quản lý Lớp trưởng và Tổ trưởng theo Điều 25.",
+    "prediction": "Nếu Lớp trưởng không làm tốt nhiệm vụ, Khoa sẽ rà soát và gửi đề xuất nhân sự mới về Phòng Công tác học sinh - sinh viên chậm nhất vào tuần thứ 10 của học kỳ để được xem xét miễn nhiệm. (Theo quy chế Công tác sinh viên).",
+    "sources": [
+      "Quy chế Công tác sinh viên",
+      "Quy chế Công tác sinh viên",
+      "Nội dung và thang điểm đánh giá rèn luyện trình độ đại học",
+      "Quy chế đánh giá kết quả rèn luyện",
+      "Quy chế Công tác sinh viên"
+    ]
+  },
+  {
+    "question": "Có những hành vi nào sẽ bị buộc thôi học?",
+    "gold": "Sinh viên có thể bị buộc thôi học nếu vi phạm pháp luật nghiêm trọng hoặc có văn bản yêu cầu xử lý từ cơ quan chức năng. Ngoài ra, các vi phạm khác cũng có thể dẫn đến hình thức xử lý này tùy theo mức độ.",
+    "prediction": "Sinh viên sẽ bị buộc thôi học nếu sau mỗi học kỳ, sinh viên bị cảnh báo kết quả học tập nhiều lần vi phạm quy định tại khoản 1 Điều 16, hoặc vi phạm các khoản 2 đến 7, hoặc vi phạm các khoản 13 đến 20, hoặc vi phạm các khoản 27 đến 30, hoặc vi phạm các khoản 33 đến 36. Mỗi khoản vi phạm sẽ có hình thức xử lý cụ thể tùy thuộc vào mức độ vi phạm.",
+    "sources": [
+      "2021Quy chế tổ chức và quản lý đào tạo",
+      "PHỤ LỤC NHỮNG ĐIỀU SINH VIÊN KHÔNG ĐƯỢC LÀM NỘI DUNG VI PHẠM VÀ HÌNH THỨC XỬ LÝ SINH VIÊN",
+      "Phụ lục một số nội dung vi phạm và hình thức xử lý người học trình độ thạc sĩ tiến sĩ",
+      "Phụ lục một số nội dung vi phạm và hình thức xử lý người học trình độ thạc sĩ tiến sĩ",
+      "Phụ lục một số nội dung vi phạm và hình thức xử lý người học trình độ thạc sĩ tiến sĩ"
+    ]
+  },
+  {
+    "question": "Nếu em không nằm trong TOP 1000 của các bảng xếp hạng thì có được học bổng không?",
+    "gold": "Nếu trường Đại học của lưu học sinh không nằm trong Bảng xếp hạng TOP 1000 của THE/ QS/ URAP/ ARWU, thì sẽ không đủ điều kiện để được cấp học bổng.",
+    "prediction": "Nếu lưu học sinh không nằm trong TOP 1000 của các bảng xếp hạng, họ sẽ không đủ điều kiện để nhận học bổng. Quy định chỉ áp dụng cho lưu học sinh từ các nước nằm trong TOP 1000. (Điều 3)",
+    "sources": [
+      "Hướng dẫn học bổng khen thưởng hỗ trợ người học và hỗ trợ khác",
+      "Hướng dẫn học bổng khen thưởng hỗ trợ người học và hỗ trợ khác",
+      "Hướng dẫn học bổng khen thưởng hỗ trợ người học và hỗ trợ khác",
+      "Hướng dẫn học bổng khen thưởng hỗ trợ người học và hỗ trợ khác",
+      "Hướng dẫn học bổng khen thưởng hỗ trợ người học và hỗ trợ khác"
+    ]
+  },
+  {
+    "question": "Nếu mình không tham gia tuần SHCD thì có sao không?",
+    "gold": "Mặc dù quy định không nêu rõ hình thức xử lý, nhưng tham gia tuần SHCD là rất quan trọng để nắm rõ nội quy và quy chế của Trường. Nếu không tham gia, bạn có thể bỏ lỡ thông tin cần thiết.",
+    "prediction": "Nếu sinh viên không tham gia tuần sinh hoạt cộng đồng, sẽ không nhận được điểm tích lũy cho hoạt động này. Tuy nhiên, nếu sinh viên có đóng góp lớn cho sự phát triển của Khoa, Trường, có thể được đánh giá cao hơn. (Điều 13, khoản 4)",
+    "sources": [
+      "QĐ.2033QĐ ứng dụng về ứng dụng công nghệ trong tổ chức và quản lý các hoạt động giáo dục",
+      "Nội dung và thang điểm đánh giá rèn luyện trình độ đại học",
+      "QĐ-T.ANH-TC-2023-SÔ 3728",
+      "2021Quy chế tổ chức và quản lý đào tạo",
+      "2021Quy chế tổ chức và quản lý đào tạo"
+    ]
+  },
+  {
+    "question": "Tại sao mình không được chuyển ngành nếu đang học năm cuối?",
+    "gold": "Bạn không được chuyển ngành nếu đang học năm cuối vì quy định tại Điều 18 yêu cầu sinh viên phải không thuộc diện năm thứ nhất hoặc năm cuối khóa để đảm bảo hoàn thành chương trình học đúng thời hạn.",
+    "prediction": "Sinh viên không được xem xét chuyển ngành nếu đang là sinh viên trình độ năm cuối khóa hoặc năm cuối khóa thứ hai của trình độ đại học hệ chính quy, hoặc đang là sinh viên năm cuối khóa trình độ thứ hai của trình độ đại học hệ kỹ thuật. Điều này nhằm đảm bảo chất lượng và khả năng theo kịp tiến độ học tập. (Theo khoản 2 Điều 5)",
+    "sources": [
+      "2021Quy chế tổ chức và quản lý đào tạo",
+      "2021Quy chế tổ chức và quản lý đào tạo",
+      "Hướng dẫn học bổng khen thưởng hỗ trợ người học học bổng hỗ trợ cho cộng đồng và hỗ trợ khác năm học 2025 - 2026",
+      "Hướng dẫn học bổng khen thưởng hỗ trợ người học và hỗ trợ khác",
+      "2021Quy chế tổ chức và quản lý đào tạo"
+    ]
+  },
+  {
+    "question": "Tại sao mình không được cấp học bổng nếu không có điểm cao nhất?",
+    "gold": "Sinh viên chỉ được cấp học bổng nếu đạt điểm xét tuyển cao nhất tại Phân hiệu. Điều này nhằm khuyến khích sinh viên nỗ lực học tập và đạt thành tích tốt trong kỳ thi tốt nghiệp. (Điều 4.2)",
+    "prediction": "Sinh viên sẽ không được cấp học bổng nếu tại thời điểm xét hoặc lập bảng kê cấp học bổng có Quyết định thôi học hoặc nghỉ học tạm thời vì lý do cá nhân hoặc tự ý bỏ học không đáng kể. Học bổng dành cho sinh viên có kết quả đầu vào cao nhất ở các ngành đào tạo còn lại tại Phân hiệu (Điều 5.1).",
+    "sources": [
+      "Hướng dẫn học bổng khen thưởng hỗ trợ người học và hỗ trợ khác",
+      "Hướng dẫn học bổng khen thưởng hỗ trợ người học học bổng hỗ trợ cho cộng đồng và hỗ trợ khác năm học 2025 - 2026",
+      "Hướng dẫn học bổng khen thưởng hỗ trợ người học và hỗ trợ khác",
+      "Hướng dẫn học bổng khen thưởng hỗ trợ người học học bổng hỗ trợ cho cộng đồng và hỗ trợ khác năm học 2025 - 2026",
+      "Hướng dẫn học bổng khen thưởng hỗ trợ người học và hỗ trợ khác"
+    ]
+  },
+  {
+    "question": "Thủ tục để xin học bổng như thế nào?",
+    "gold": "Để xin học bổng, bạn cần chuẩn bị một đơn đề nghị cấp học bổng theo mẫu của Trường và bản chính bảng điểm tích lũy trình độ đại học tính đến thời điểm nộp hồ sơ. (Điều 1.3)",
+    "prediction": "Để xin học bổng, bạn cần nộp hồ sơ theo yêu cầu trong hướng dẫn. Hồ sơ sẽ được xem xét dựa trên điểm trung bình tích lũy và các tiêu chí khác được nêu trong quy định. Bạn nên kiểm tra cụ thể các điều khoản chi tiết trong hướng dẫn để chuẩn bị hồ sơ đúng cách.",
+    "sources": [
+      "Hướng dẫn học bổng khen thưởng hỗ trợ người học và hỗ trợ khác",
+      "Hướng dẫn học bổng khen thưởng hỗ trợ người học và hỗ trợ khác",
+      "Hướng dẫn học bổng khen thưởng hỗ trợ người học và hỗ trợ khác",
+      "Hướng dẫn học bổng khen thưởng hỗ trợ người học và hỗ trợ khác",
+      "Hướng dẫn học bổng khen thưởng hỗ trợ người học và hỗ trợ khác"
+    ]
+  },
+  {
+    "question": "Học bổng tân sinh viên áp dụng cho những ai?",
+    "gold": "Học bổng tân sinh viên áp dụng cho sinh viên có nơi thường trú và học trường THPT tại các tỉnh đã ký kết hợp tác với Trường Đại học Tôn Đức Thắng, như Bình Thuận, Gia Lai, Bình Định, Lâm Đồng, Quảng Ngãi.",
+    "prediction": "Sinh viên trúng tuyển và nhập học tại Trường, Phân hiệu thuộc Trường trong đợt tuyển sinh đại học năm 2024 sẽ được cấp học bổng toàn phần (100% học phí). (Xem điều kiện và mức xét cấp học bổng trong hướng dẫn).",
+    "sources": [
+      "Hướng dẫn học bổng khen thưởng hỗ trợ người học và hỗ trợ khác",
+      "Hướng dẫn học bổng khen thưởng hỗ trợ người học học bổng hỗ trợ cho cộng đồng và hỗ trợ khác năm học 2025 - 2026",
+      "Hướng dẫn học bổng khen thưởng hỗ trợ người học và hỗ trợ khác",
+      "Hướng dẫn học bổng khen thưởng hỗ trợ người học học bổng hỗ trợ cho cộng đồng và hỗ trợ khác năm học 2025 - 2026",
+      "Hướng dẫn học bổng khen thưởng hỗ trợ người học và hỗ trợ khác"
+    ]
+  },
+  {
+    "question": "Nếu em là tác giả ghi tên đầu của bài báo WoS thuộc loại Q1 thì em sẽ nhận được bao nhiêu tiền thưởng?",
+    "gold": "Nếu bạn là tác giả ghi tên đầu của bài báo WoS thuộc loại Q1, bạn sẽ nhận được 6.000.000 đồng theo quy định tại điều 1, khoản 1.",
+    "prediction": "Nếu em là tác giả ghi tên đầu của bài báo WoS thuộc loại Q1, em sẽ nhận được mức thưởng là 6.000.000 đồng. (Điều kiện này được nêu ở khoản 1 trong bảng thưởng).",
+    "sources": [
+      "Hướng dẫn học bổng khen thưởng hỗ trợ người học học bổng hỗ trợ cho cộng đồng và hỗ trợ khác năm học 2025 - 2026",
+      "Hướng dẫn học bổng khen thưởng hỗ trợ người học và hỗ trợ khác",
+      "Hướng dẫn học bổng khen thưởng hỗ trợ người học và hỗ trợ khác",
+      "Hướng dẫn học bổng khen thưởng hỗ trợ người học học bổng hỗ trợ cho cộng đồng và hỗ trợ khác năm học 2025 - 2026",
+      "Hướng dẫn học bổng khen thưởng hỗ trợ người học và hỗ trợ khác"
+    ]
+  },
+  {
+    "question": "Tại sao sinh viên lại bị buộc thôi học?",
+    "gold": "Trong đoạn văn bản này không có thông tin cụ thể về lý do buộc thôi học. Tuy nhiên, thường thì sinh viên có thể bị buộc thôi học do không đạt yêu cầu học tập hoặc vi phạm quy chế của trường.",
+    "prediction": "Sinh viên bị buộc thôi học có thể do vi phạm quy định về học tập, cụ thể là vi phạm các quy định tại khoản 1 Điều 16 của Quy chế tổ chức và quản lý đào tạo. Cụ thể, sinh viên có thể bị buộc thôi học nếu vi phạm các quy định về thời gian học tập, đăng ký môn học, hoặc vi phạm các quy định khác về học tập. (Điều 16)",
+    "sources": [
+      "2021Quy chế tổ chức và quản lý đào tạo",
+      "2021Quy chế tổ chức và quản lý đào tạo",
+      "2021Quy chế tổ chức và quản lý đào tạo",
+      "Quy chế Công tác sinh viên",
+      "2021Quy chế tổ chức và quản lý đào tạo"
+    ]
+  }
+]

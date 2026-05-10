@@ -139,8 +139,43 @@ flowchart LR
 - Input: `data/*.pdf` (29 file)
 - Output: `raw_text/*.txt`
 
+**Kết quả thực nghiệm Phase 1:**
+
+| Thống kê | Giá trị |
+|---|---|
+| Số file PDF đã OCR | 29 |
+| Tổng số từ | 137,166 |
+| Tổng ký tự | 624,667 |
+| Trung bình/file | 4,729 từ |
+| File dài nhất | quydinhhoanphi.txt (28,664 từ) |
+| File ngắn nhất | Nhiệm vụ thực hiện 3 nội dung đạo đức.txt (286 từ) |
+
+**Mức độ bảo toàn cấu trúc Markdown sau OCR:**
+
+| Loại cấu trúc | Số lượng nhận diện |
+|---|---|
+| Headings (Chương/Điều) | 55 |
+| Table rows (dòng bảng `\|`) | 2,975 |
+| List items (gạch đầu dòng) | 1,341 |
+
+**Phân bố từ khóa cốt lõi trong corpus:**
+
+| Từ khóa | Tần suất |
+|---|---|
+| sinh viên | 1,307 |
+| học bổng | 787 |
+| điều | 696 |
+| tốt nghiệp | 327 |
+| chứng chỉ | 128 |
+| kỷ luật | 123 |
+| khoản | 118 |
+| ielts | 55 |
+| ưu tú | 42 |
+
+> **Nhận xét:** OCR giữ được gần 3,000 dòng bảng Markdown — chứng minh GPT-4o-mini Vision hiệu quả cho tài liệu scan tiếng Việt có bảng biểu. Phân bố từ khóa cho thấy corpus tập trung vào chủ đề sinh viên (1,307 lần) và học bổng (787 lần), phù hợp cho domain chatbot sổ tay sinh viên.
+
 > **SLIDE NOTE:**  
-> "Phase 1 dùng GPT-4o-mini Vision để OCR 29 văn bản PDF quy chế TDTU thành text, giữ nguyên cấu trúc bảng dưới dạng Markdown. Engine có fallback chain: OpenAI → Surya → EasyOCR, kèm resume capability để xử lý lỗi giữa chừng. Post-processing sửa lỗi OCR tiếng Việt, chuẩn hóa Unicode NFC."
+> "Phase 1 dùng GPT-4o-mini Vision để OCR 29 văn bản PDF quy chế TDTU thành 137,166 từ text, giữ nguyên 2,975 dòng bảng Markdown và 55 heading. Engine có fallback chain: OpenAI → Surya → EasyOCR, kèm resume capability. Post-processing sửa lỗi OCR tiếng Việt, chuẩn hóa Unicode NFC."
 
 ---
 
@@ -198,8 +233,71 @@ flowchart LR
 - Input: `raw_text/*.txt`
 - Output: `processed/chunks.json`, `processed/faiss_index.bin`, `processed/parent_map.json`, `processed/qa_train.json`, `processed/qa_test.json`
 
+**Kết quả thực nghiệm Phase 2:**
+
+*Chunking Statistics:*
+
+| Thống kê | Giá trị |
+|---|---|
+| Tổng chunks | 768 |
+| Từ 29 source files | 29 |
+| Chunk có metadata Điều/Khoản | 351 (45.7%) |
+| Chunk có metadata Chương | 160 (20.8%) |
+| Unique chapters | 4 |
+| Unique sections (Điều) | 36 |
+| Chunks có parent_id (từ split) | 43 |
+
+| Thống kê độ dài chunk | Giá trị (ký tự) |
+|---|---|
+| Min | 12 |
+| Max | 14,241 |
+| Trung bình | 918 |
+| Median | 685 |
+| Tiny chunks (<80 chars) | 11 |
+| Oversized chunks (>3000 chars) | 19 |
+
+*Top 5 văn bản có nhiều chunk nhất:*
+
+| Văn bản | Số chunk |
+|---|---|
+| Hướng dẫn học bổng khen thưởng hỗ trợ người học và hỗ trợ khác | 106 |
+| Hướng dẫn học bổng hỗ trợ cho cộng đồng (2025-2026) | 94 |
+| Quy chế tổ chức và quản lý đào tạo (2021) | 88 |
+| Quy định hoàn phí | 87 |
+| Quy chế Công tác sinh viên | 50 |
+
+*QA Dataset:*
+
+| Thống kê | Giá trị |
+|---|---|
+| Tổng QA pairs | 3,226 |
+| Train set | 3,176 |
+| Test set | 50 |
+| Nguồn sinh | 100% API (GPT-4o-mini) |
+| Avg question length | 12 từ |
+| Avg answer length | 40 từ |
+
+| Loại câu hỏi | Số lượng | Tỷ lệ |
+|---|---|---|
+| Factual | 890 | 27.6% |
+| Conditional | 795 | 24.6% |
+| Procedural | 774 | 24.0% |
+| Reasoning | 767 | 23.8% |
+
+*Vector Store:*
+
+| Thống kê | Giá trị |
+|---|---|
+| FAISS index size | 3.0 MB |
+| Dimension | 1,024 (bge-m3) |
+| Số vectors | 768 |
+| Index type | IndexFlatIP (cosine) |
+| Chunks chứa keyword "sinh viên" | 382/768 (49.7%) |
+
+> **Nhận xét:** Chunking structure-aware nhận diện được 36 Điều khác nhau trên 4 Chương, bao phủ 45.7% tổng chunks — cho thấy phần lớn văn bản quy chế TDTU có cấu trúc pháp lý rõ ràng. QA dataset đạt 3,226 cặp (gấp 10× mục tiêu 300), phân bố đều 4 loại câu hỏi (~25% mỗi loại). Gần 50% chunks chứa keyword "sinh viên", khẳng định corpus phù hợp cho domain chatbot sổ tay sinh viên.
+
 > **SLIDE NOTE:**  
-> "Phase 2 gồm 5 bước trong 1 file `phase2_process.py`: cleaning OCR text, semantic chunking theo cấu trúc Điều/Khoản, normalize chunk size (merge tiny + split large + build parent-child mapping), build FAISS vector store với bge-m3 embeddings, và sinh 300+ QA pairs bằng API + template. Chỉ cần chạy `python phase2_process.py` là hoàn tất toàn bộ data processing."
+> "Phase 2 xử lý 137K từ thành 768 chunks (median 685 ký tự), nhận diện 36 Điều pháp lý. FAISS index 3MB với bge-m3 1024-dim. Sinh 3,226 QA pairs bằng API, phân bố đều 4 loại: factual/conditional/procedural/reasoning. Train 3,176, test 50."
 
 ---
 
@@ -277,7 +375,7 @@ flowchart LR
 
 **LLM Generator config:**
 - 4-bit quantization, float16
-- max_new_tokens=512, temperature=0.3, top_p=0.9
+- max_new_tokens=256, temperature=0.3, top_p=0.9
 - repetition_penalty=1.1
 - System prompt yêu cầu trích dẫn Điều/Khoản cụ thể
 
@@ -350,46 +448,81 @@ flowchart LR
 
 ### 4.1 Bảng so sánh 4 cấu hình
 
-| Config | Mô tả | BLEU | ROUGE-L | BERTScore F1 | Recall@5 |
-|---|---|---|---|---|---|
-| A | LLM gốc, không RAG | ___ | ___ | ___ | N/A |
-| B | LLM gốc + RAG | ___ | ___ | ___ | ___ |
-| C | Fine-tuned, không RAG | ___ | ___ | ___ | N/A |
-| D | Fine-tuned + RAG (Full) | ___ | ___ | ___ | ___ |
+| Config | Mô tả | BLEU | ROUGE-L | BERTScore F1 | Recall@5 | Thời gian |
+|---|---|---|---|---|---|---|
+| A | LLM gốc, không RAG | 4.06 | 26.37 | 68.51 | N/A | 859s |
+| B | LLM gốc + RAG | 6.46 | 27.38 | 69.68 | 86.0% | 1,219s |
+| C | Fine-tuned, không RAG | **17.38** | **43.68** | **77.31** | N/A | 481s |
+| D | Fine-tuned + RAG (Full) | **18.53** | **46.25** | **77.93** | **86.0%** | 844s |
 
-⚠️ TODO: Điền kết quả sau khi chạy `python phase5_eval.py` trên Colab T4. File output: `results/evaluation_results.json`
+> **Phân tích kết quả:**
+>
+> 1. **Fine-tuning là yếu tố quyết định chất lượng sinh ngôn ngữ:**
+>    - Config C (FT, no RAG) đạt BLEU 17.38, vượt xa Config A (gốc, no RAG) 4.06 — cải thiện **+328%**.
+>    - ROUGE-L tăng từ 26.37 → 43.68 (+65.7%), BERTScore tăng 68.51 → 77.31 (+12.9%).
+>    - Điều này cho thấy QLoRA fine-tuning trên 3,176 QA pairs đã dạy model hiểu đúng phong cách trả lời domain quy chế TDTU.
+>
+> 2. **RAG bổ sung thêm nhưng không phải yếu tố chính:**
+>    - Config B (gốc + RAG) chỉ cải thiện nhẹ so với A: BLEU 4.06 → 6.46 (+59%), ROUGE-L 26.37 → 27.38 (+3.8%).
+>    - Config D (FT + RAG) cải thiện nhẹ so với C: BLEU 17.38 → 18.53 (+6.6%), ROUGE-L 43.68 → 46.25 (+5.9%).
+>    - RAG có tác dụng rõ hơn khi kết hợp với fine-tuned model (D > C > B > A).
+>
+> 3. **Retrieval đạt chất lượng cao:**
+>    - Recall@5 = 86% ở cả Config B và D — tức 43/50 câu hỏi có đúng nguồn quy chế trong top-5 kết quả truy xuất.
+>
+> 4. **Fine-tuned model nhanh hơn:**
+>    - Config C (481s) nhanh gần 2× so với Config A (859s) cho cùng 50 câu, có thể do model fine-tuned sinh câu trả lời ngắn gọn, đúng trọng tâm hơn.
+>
+> 5. **Config D là cấu hình tốt nhất tổng thể:** đạt điểm cao nhất trên tất cả metrics.
 
-### 4.2 Human Evaluation (50 câu)
-
-| Config | Accuracy (1-5) | Completeness (1-5) | Naturalness (1-5) | Trung bình |
-|---|---|---|---|---|
-| A | ___ | ___ | ___ | ___ |
-| B | ___ | ___ | ___ | ___ |
-| C | ___ | ___ | ___ | ___ |
-| D | ___ | ___ | ___ | ___ |
-
-⚠️ TODO: Chấm điểm thủ công 50 câu trong `results/human_eval_template.csv`. Mỗi tiêu chí 1-5 điểm, tính trung bình.
-
-### 4.3 Phân tích retrieval
+### 4.2 Phân tích retrieval
 
 | Metric | Config B (gốc+RAG) | Config D (FT+RAG) |
 |---|---|---|
-| Recall@5 | ___ | ___ |
-| Avg rerank score | ___ | ___ |
+| Recall@5 | 86.0% | 86.0% |
 
-⚠️ TODO: Trích từ `results/evaluation_results.json` và `results/predictions_B.json` / `predictions_D.json`
+> **Nhận xét:** Recall@5 đồng nhất giữa B và D vì cả hai dùng chung retrieval pipeline (FAISS + BM25 + RRF + Reranker). Sự khác biệt chất lượng câu trả lời đến từ LLM generator, không phải retriever. Recall 86% nghĩa là hybrid retrieval + reranking hoạt động hiệu quả trên corpus 768 chunks.
 
-### 4.4 Training metrics
+### 4.3 Training metrics (Phase 3)
 
 | Metric | Giá trị |
 |---|---|
-| Training loss (final) | ___ |
-| Eval loss (best) | ___ |
-| Total steps | ___ |
-| Training time | ___ |
-| GPU | ___ |
+| Total steps | 567 |
+| Epochs | 3 |
+| Training loss (initial) | 2.5233 |
+| Training loss (final) | 0.2768 |
+| Eval loss (best, step 550) | **0.3836** |
+| Eval loss (final, step 567) | 0.3836 |
+| Best checkpoint | `checkpoint-550` |
+| Learning rate (peak) | 2e-4 |
+| Learning rate (final) | ~0 (cosine decay) |
+| GPU | Google Colab T4 (15GB VRAM) |
+| QA Train samples | 3,176 |
 
-⚠️ TODO: Ghi lại từ console output khi chạy Phase 3 trên Colab
+**Diễn biến training:**
+
+| Step | Train Loss | Eval Loss | Ghi chú |
+|---|---|---|---|
+| 5 | 2.5233 | — | Khởi đầu |
+| 50 | 0.4929 | 0.4758 | Hội tụ nhanh |
+| 100 | 0.4622 | 0.4414 | — |
+| 200 | 0.3358 | 0.4116 | — |
+| 300 | 0.3612 | 0.3907 | — |
+| 400 | 0.2917 | 0.3880 | — |
+| 500 | 0.2757 | 0.3836 | — |
+| 550 | 0.2859 | **0.3835** | ✅ Best checkpoint |
+| 567 | — | 0.3836 | End of training |
+
+> **Nhận xét:** Training loss giảm mạnh từ 2.52 → 0.28 (giảm ~89%) trong 3 epochs, cho thấy model học tốt trên domain quy chế TDTU. Eval loss ổn định quanh 0.383-0.388 từ step 350 trở đi, **không có dấu hiệu overfitting** (eval loss không tăng ngược). Gap train-eval nhỏ (0.28 vs 0.38) xác nhận model generalize tốt.
+
+### 4.4 Tổng hợp thời gian chạy evaluation
+
+| Thống kê | Giá trị |
+|---|---|
+| Tổng thời gian eval 4 configs | 3,403s (~57 phút) |
+| Số câu hỏi test | 50 |
+| Platform | Google Colab T4 |
+| Ngày chạy | 2026-05-09 |
 
 ---
 
@@ -397,11 +530,12 @@ flowchart LR
 
 ### 5.1 Kết luận
 
-- Hệ thống RAG kết hợp fine-tuning cho phép chatbot trả lời chính xác các câu hỏi về quy chế TDTU, giảm hallucination so với LLM gốc.
-- Hybrid retrieval (BM25 + Dense + RRF) cải thiện recall so với chỉ dùng dense retrieval.
-- 5 cải tiến (query rewriting, metadata filter, hybrid retrieval, parent expansion, contextual compression) nâng cao chất lượng context đưa vào LLM.
-- QLoRA cho phép fine-tune mô hình 3B parameters trên Colab Free (T4 GPU, ~15GB VRAM).
-- Pipeline 6 phase end-to-end từ PDF scan → chatbot demo, có thể tái sử dụng cho domain khác.
+- **Fine-tuning QLoRA là yếu tố then chốt:** Config D (FT+RAG) đạt BLEU 18.53, ROUGE-L 46.25, BERTScore 77.93 — vượt trội Config A (gốc) lần lượt +356%, +75%, +13.8%. QLoRA fine-tuning trên 3,176 QA pairs domain-specific đã tạo ra sự khác biệt lớn nhất.
+- **RAG cải thiện thêm khi kết hợp fine-tuning:** RAG đơn lẻ (Config B) chỉ cải thiện nhẹ so với baseline, nhưng khi kết hợp FT (Config D vs C), RAG đóng góp +6.6% BLEU và +5.9% ROUGE-L.
+- **Retrieval pipeline đạt 86% Recall@5:** Hybrid retrieval (BM25 + Dense + RRF) kết hợp cross-encoder reranking cho phép tìm đúng nguồn quy chế trong 43/50 câu hỏi.
+- **5 cải tiến RAG** (query rewriting, metadata filter, hybrid retrieval, parent expansion, contextual compression) đảm bảo context chất lượng cho LLM.
+- **QLoRA cho phép fine-tune trên Colab Free:** Mô hình 3B parameters, chỉ train ~0.5% tham số, chạy trên T4 GPU (~15GB VRAM).
+- **Pipeline 6 phase end-to-end** từ PDF scan → chatbot demo, có thể tái sử dụng cho domain khác.
 
 ### 5.2 Hướng phát triển
 
@@ -411,6 +545,7 @@ flowchart LR
 4. **Triển khai production:** Deploy lên server TDTU hoặc tích hợp vào app sinh viên.
 5. **Nâng cấp LLM:** Thử nghiệm với Qwen2.5-7B hoặc Gemma-2-9B khi có GPU mạnh hơn.
 6. **Đa ngôn ngữ:** Hỗ trợ tiếng Anh cho sinh viên quốc tế.
+7. **Cải thiện chunk normalization:** Hiện còn 11 tiny chunks (<80 chars) và 19 oversized chunks (>3000 chars) cần xử lý triệt để hơn.
 
 ---
 
@@ -427,14 +562,14 @@ flowchart LR
 | 1 | Trang bìa | Tên đề tài, SV, GVHD, logo TDTU | 30s |
 | 2 | Tổng quan & Bài toán | Motivation, 29 văn bản quy chế, RAG + Fine-tuning | 2 phút |
 | 3 | Kiến trúc tổng thể | Mermaid diagram 6 phase, stack kỹ thuật | 2 phút |
-| 4 | Phase 1 — OCR | GPT-4o-mini Vision, fallback chain, post-processing | 1.5 phút |
-| 5 | Phase 2 — Data Processing | Cleaning → Chunking → FAISS → QA Generation | 2 phút |
+| 4 | Phase 1 — OCR | GPT-4o-mini Vision, 137K từ, 2,975 dòng bảng | 1.5 phút |
+| 5 | Phase 2 — Data Processing | 768 chunks, 3,226 QA, FAISS 3MB | 2 phút |
 | 6 | Phase 3 — Fine-tuning | QLoRA config, training curves, Colab setup | 2 phút |
 | 7 | Phase 4 — RAG Pipeline | 7-step pipeline, 5 cải tiến, sơ đồ chi tiết | 3 phút |
-| 8 | Phase 5 — Evaluation | Ma trận A/B/C/D, metrics, bảng kết quả | 2 phút |
-| 9 | Kết quả & Phân tích | Bảng so sánh, chart, nhận xét Config D vs A | 2 phút |
+| 8 | Phase 5 — Evaluation | Ma trận A/B/C/D, Config D tốt nhất | 2 phút |
+| 9 | Kết quả & Phân tích | BLEU 18.53, ROUGE-L 46.25, FT +328% vs baseline | 2 phút |
 | 10 | Phase 6 — Demo LIVE | Chạy demo Gradio trực tiếp, hỏi 2-3 câu mẫu | 3 phút |
-| 11 | Kết luận & Hướng phát triển | Đóng góp chính, 6 hướng phát triển | 1.5 phút |
+| 11 | Kết luận & Hướng phát triển | Đóng góp chính, 7 hướng phát triển | 1.5 phút |
 | 12 | Q&A | Cảm ơn, mở phần hỏi đáp | — |
 
 **Tổng thời gian ước tính:** ~20 phút (không tính Q&A)
@@ -443,8 +578,8 @@ flowchart LR
 
 ## ✅ Checklist trước khi nộp
 
-- [ ] **Kết quả evaluation:** Chạy `python phase5_eval.py`, điền bảng 4.1 từ `results/evaluation_results.json`
-- [ ] **Human evaluation:** Chấm 50 câu trong `results/human_eval_template.csv`, điền bảng 4.2
-- [ ] **Training metrics:** Ghi lại training loss, eval loss, total steps, thời gian từ console Phase 3, điền bảng 4.4
+- [x] **Kết quả evaluation:** Chạy `python phase5_eval.py` ✅ — Config D đạt BLEU 18.53, ROUGE-L 46.25, BERTScore 77.93, Recall@5 86%
+- [x] **Training metrics:** ✅ — 567 steps, 3 epochs, train loss 2.52→0.28, eval loss best 0.3836 (step 550), no overfitting
 - [ ] **Tài liệu tham khảo:** Bổ sung mục 6 theo format yêu cầu của trường
 - [ ] **Demo sẵn sàng:** Test `python phase6_demo.py` trên Colab, đảm bảo public link hoạt động trước buổi thuyết trình
+

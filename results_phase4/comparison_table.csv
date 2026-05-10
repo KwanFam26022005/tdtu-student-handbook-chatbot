@@ -1,0 +1,5 @@
+﻿Config,Label,BLEU,ROUGE-L,BERTScore_F1,Recall@5,Time(s),Num_Samples
+A,"LLM gốc, không RAG",4.06,26.37,68.51,N/A,859.2,50
+B,LLM gốc + RAG,6.46,27.38,69.68,86.0,1218.5,50
+C,"Fine-tuned, không RAG",17.38,43.68,77.31,N/A,481.1,50
+D,Fine-tuned + RAG,18.53,46.25,77.93,86.0,843.7,50
