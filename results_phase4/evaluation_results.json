@@ -23,7 +23,7 @@
     "config": "C",
     "label": "Fine-tuned, không RAG",
     "bleu": 17.38,
-    "rouge_l": 43.68,
+    "rouge_l": 43.68, 
     "bertscore_f1": 77.31,
     "time_seconds": 481.1,
     "num_samples": 50,

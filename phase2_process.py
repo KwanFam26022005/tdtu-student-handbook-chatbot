@@ -39,8 +39,8 @@ CLEAN_TEXT_DIR.mkdir(parents=True, exist_ok=True)
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
 # Chunking config
-CHUNK_SIZE = 512       # tokens (ước tính ~1 token ≈ 1.5 ký tự Việt)
-CHUNK_OVERLAP = 64     # tokens overlap
+CHUNK_SIZE = 768       # ký tự (≈512 tokens, 1 token ≈ 1.5 ký tự Việt)
+CHUNK_OVERLAP = 96     # ký tự overlap
 MIN_CHUNK_LENGTH = 50  # Bỏ chunk quá ngắn
 
 # Chunk normalization config (Phase 2B+)
@@ -92,20 +92,7 @@ def clean_text(text: str) -> str:
     for wrong, right in ocr_fixes.items():
         text = text.replace(wrong, right)
 
-    # 6. Gộp dòng bị ngắt giữa chừng (CHỈ cho dòng text thường, BỎ QUA dòng bảng)
-    #    Dòng bảng Markdown bắt đầu bằng '|' — không gộp
-    lines = text.split('\n')
-    merged_lines = []
-    for i, line in enumerate(lines):
-        stripped = line.strip()
-        # Không gộp nếu dòng hiện tại hoặc dòng sau là dòng bảng Markdown
-        if (stripped.startswith('|') or
-                (i + 1 < len(lines) and lines[i + 1].strip().startswith('|'))):
-            merged_lines.append(line)
-        else:
-            merged_lines.append(line)
-    text = '\n'.join(merged_lines)
-    # Gộp dòng text thường bị ngắt giữa chừng
+    # 6. Gộp dòng bị ngắt giữa chừng (skip dòng bảng Markdown bắt đầu bằng '|')
     text = re.sub(
         r'([a-zàáạảãăắằặẳẵâấầậẩẫđèéẹẻẽêếềệểễìíịỉĩòóọỏõôốồộổỗơớờợởỡùúụủũưứừựửữỳýỵỷỹ,])'
         r'\n'
@@ -132,7 +119,8 @@ def process_cleaning():
     print("\n[PHASE 2A] Cleaning & Normalization")
     print("=" * 60)
 
-    txt_files = sorted(RAW_TEXT_DIR.glob("*.txt"))
+    txt_files = sorted(f for f in RAW_TEXT_DIR.glob("*.txt")
+                       if f.name != "ocr_progress.json")
     if not txt_files:
         print(f"[ERROR] Không có file .txt nào trong {RAW_TEXT_DIR}")
         print("   Hãy chạy phase1_ocr.py trước!")
@@ -222,7 +210,7 @@ def semantic_chunk(text: str, source_name: str) -> list[dict]:
                 current_chapter = header
             
             # Nếu section quá dài, chia nhỏ theo paragraph
-            if len(section_text) > CHUNK_SIZE * 2:
+            if len(section_text) > CHUNK_SIZE * 3:
                 paragraphs = _merge_table_paragraphs(section_text.split('\n\n'))
                 buffer = ""
                 for para in paragraphs:
@@ -306,48 +294,69 @@ def semantic_chunk(text: str, source_name: str) -> list[dict]:
         
         context_header = " - ".join(header_parts)
         chunk["text_with_context"] = f"{context_header}\n{chunk['text']}"
-        chunk["id"] = f"{chunk['source']}_{chunks.index(chunk)}"
+        chunk["id"] = f"temp_{id(chunk)}"  # Temp ID, overwritten in process_chunking
     
     return chunks
 
 
 def process_chunking():
-    """Chunking tat ca clean text -> chunks.json"""
+    """Chunking: ưu tiên clean_text/, fallback raw_text/ nếu thiếu."""
     print("\n[PHASE 2B] Semantic Chunking")
     print("=" * 60)
-    
-    txt_files = sorted(CLEAN_TEXT_DIR.glob("*.txt"))
-    if not txt_files:
-        print("[ERROR] Khong co file clean text. Chay cleaning truoc!")
+
+    # Master list từ raw_text (bỏ ocr_progress.json)
+    raw_files = sorted(f for f in RAW_TEXT_DIR.glob("*.txt")
+                       if f.name != "ocr_progress.json")
+    if not raw_files:
+        print("[ERROR] Khong co file text nao!")
         return False
-    
+
     all_chunks = []
-    
-    for idx, txt_path in enumerate(txt_files, 1):
-        text = txt_path.read_text(encoding="utf-8")
-        source_name = txt_path.stem
-        
+
+    for idx, raw_path in enumerate(raw_files, 1):
+        source_name = raw_path.stem
+        clean_path = CLEAN_TEXT_DIR / raw_path.name
+
+        if clean_path.exists():
+            text = clean_path.read_text(encoding="utf-8")
+        else:
+            # Fallback: clean in-memory và lưu
+            raw = raw_path.read_text(encoding="utf-8")
+            text = clean_text(raw)
+            CLEAN_TEXT_DIR.mkdir(parents=True, exist_ok=True)
+            clean_path.write_text(text, encoding="utf-8")
+
         chunks = semantic_chunk(text, source_name)
         all_chunks.extend(chunks)
-        
-        print(f"  [{idx}/{len(txt_files)}] {source_name}: {len(chunks)} chunks")
-    
+        print(f"  [{idx}/{len(raw_files)}] {source_name[:55]}: {len(chunks)} chunks")
+
+    if not all_chunks:
+        print("[ERROR] Khong tao duoc chunk nao!")
+        return False
+
     # Gán ID duy nhất
     for i, chunk in enumerate(all_chunks):
         chunk["id"] = f"chunk_{i:04d}"
-    
+
     # Lưu
     chunks_path = OUTPUT_DIR / "chunks.json"
     with open(chunks_path, "w", encoding="utf-8") as f:
         json.dump(all_chunks, f, ensure_ascii=False, indent=2)
-    
-    print(f"\n[OK] Tong: {len(all_chunks)} chunks -> {chunks_path}")
-    
-    # Thống kê
+
+    print(f"\n[OK] Tong: {len(all_chunks)} chunks tu {len(raw_files)} files")
+
     lengths = [len(c["text"]) for c in all_chunks]
-    print(f"   Min: {min(lengths)} ký tự | Max: {max(lengths)} ký tự | "
-          f"Trung bình: {sum(lengths)//len(lengths)} ký tự")
-    
+    print(f"   Min: {min(lengths)} | Max: {max(lengths)} | "
+          f"Avg: {sum(lengths)//len(lengths)} ky tu")
+
+    # Coverage check
+    chunked = {c["source"] for c in all_chunks}
+    missing = {f.stem for f in raw_files} - chunked
+    if missing:
+        print(f"\n  [WARNING] {len(missing)} files co 0 chunks:")
+        for s in sorted(missing):
+            print(f"    - {s}")
+
     return True
 
 
@@ -823,10 +832,13 @@ def merge_tiny_chunks(chunks: list[dict]) -> list[dict]:
             else:
                 if buffer is not None:
                     chunk = chunk.copy()
-                    chunk["text"] = buffer["text"] + "\n" + chunk["text"]
-                    chunk["text_with_context"] = (
-                        buffer["text_with_context"] + "\n" + chunk["text"]
-                    )
+                    merged_text = buffer["text"] + "\n" + chunk["text"]
+                    chunk["text"] = merged_text
+                    # Rebuild text_with_context properly
+                    hdr = [f"[{chunk['source']}]"]
+                    if chunk.get('chapter'): hdr.append(chunk['chapter'])
+                    if chunk.get('section'): hdr.append(chunk['section'])
+                    chunk["text_with_context"] = f"{' - '.join(hdr)}\n{merged_text}"
                     buffer = None
                 merged.append(chunk)
 
@@ -1026,4 +1038,3 @@ if __name__ == "__main__":
     process_qa_generation()
 
     print("\n[OK] Phase 2 hoan tat! Tiep theo: chay phase3_finetune.py")
-
