@@ -111,6 +111,35 @@ def clean_text(text: str) -> str:
     lines = [line.strip() for line in text.split('\n')]
     text = '\n'.join(lines)
 
+    # 10. Chuẩn hóa viết tắt TDTU (word boundary, không thay trong URL/code)  # [NEW]
+    TDTU_ABBREVS = {                                                           # [NEW]
+        "SV": "sinh viên", "ĐH": "đại học", "P.ĐH": "Phòng đại học",          # [NEW]
+        "HK": "học kỳ", "TC": "tín chỉ", "GPA": "điểm trung bình tích lũy",  # [NEW]
+    }                                                                          # [NEW]
+    for abbr, full in TDTU_ABBREVS.items():                                    # [NEW]
+        # Chỉ thay khi đứng riêng (word boundary), skip nếu nằm trong URL     # [NEW]
+        pattern = r'(?<![:/\w])\b' + re.escape(abbr) + r'\b(?![:/\w])'         # [NEW]
+        text = re.sub(pattern, full, text)                                     # [NEW]
+
+    # 11. Loại bỏ dòng footer/header lặp (≥3 lần trong cùng text)             # [NEW]
+    line_list = text.split('\n')                                               # [NEW]
+    from collections import Counter as _Counter                                # [NEW]
+    line_counts = _Counter(line.strip() for line in line_list if line.strip())  # [NEW]
+    repeated = {ln for ln, cnt in line_counts.items() if cnt >= 3}             # [NEW]
+    if repeated:                                                               # [NEW]
+        seen_repeated = set()                                                  # [NEW]
+        filtered_lines = []                                                    # [NEW]
+        for line in line_list:                                                 # [NEW]
+            stripped = line.strip()                                            # [NEW]
+            if stripped in repeated:                                           # [NEW]
+                if stripped not in seen_repeated:                               # [NEW]
+                    seen_repeated.add(stripped)                                 # [NEW]
+                    filtered_lines.append(line)  # Giữ lần đầu tiên           # [NEW]
+                # else: bỏ qua (xóa occurrence lặp)                            # [NEW]
+            else:                                                              # [NEW]
+                filtered_lines.append(line)                                    # [NEW]
+        text = '\n'.join(filtered_lines)                                       # [NEW]
+
     return text.strip()
 
 
@@ -386,8 +415,8 @@ def build_vector_store():
     print(f"  Loading embedding model: {EMBEDDING_MODEL}...")
     embed_model = SentenceTransformer(EMBEDDING_MODEL)
 
-    # Embed tat ca chunks (dung text_with_context de co ngu canh)
-    texts = [c["text_with_context"] for c in chunks]
+    # [MOD] Embed dùng text_for_retrieval (decoupled RAG), fallback text_with_context
+    texts = [c.get("text_for_retrieval", c["text_with_context"]) for c in chunks]  # [MOD]
 
     print(f"  Dang embed {len(texts)} chunks...")
     embeddings = embed_model.encode(
@@ -861,6 +890,7 @@ def split_large_chunks(chunks: list[dict]) -> list[dict]:
     """
     Split chunks longer than MAX_CHUNK_CHARS at paragraph boundaries.
     Each sub-chunk inherits metadata and gets a parent_id link.
+    Table-aware: nếu chunk chứa Markdown table, prepend header+divider vào mỗi sub-chunk.
     """
     result = []
     split_count = 0
@@ -871,7 +901,19 @@ def split_large_chunks(chunks: list[dict]) -> list[dict]:
             continue
 
         split_count += 1
-        paragraphs = chunk["text"].split("\n\n")
+        text_body = chunk["text"]
+
+        # [NEW] Detect Markdown table: chunk chứa ký tự '|'
+        is_table = '|' in text_body                                            # [NEW]
+        table_header = ""                                                      # [NEW]
+        if is_table:                                                           # [NEW]
+            body_lines = text_body.split('\n')                                 # [NEW]
+            # Tách 2 dòng đầu (header row + divider row)                       # [NEW]
+            if len(body_lines) >= 2:                                           # [NEW]
+                table_header = body_lines[0] + '\n' + body_lines[1] + '\n'     # [NEW]
+                text_body = '\n'.join(body_lines[2:])                          # [NEW]
+
+        paragraphs = text_body.split("\n\n")
         sub_texts = []
         current = ""
 
@@ -894,6 +936,9 @@ def split_large_chunks(chunks: list[dict]) -> list[dict]:
 
         for i, sub_text in enumerate(sub_texts):
             new_chunk = chunk.copy()
+            # [NEW] Nếu là bảng, prepend header+divider vào mỗi sub-chunk
+            if is_table and table_header:                                      # [NEW]
+                sub_text = table_header + sub_text                             # [NEW]
             new_chunk["text"] = sub_text
             new_chunk["text_with_context"] = f"{context_header}\n{sub_text}"
             new_chunk["parent_id"] = chunk["id"]
@@ -1012,6 +1057,255 @@ def process_chunk_normalization():
 
 
 # ══════════════════════════════════════════════════════════
+# 2B++ SEMANTIC TAGGING (regex only, no API)                  # [NEW]
+# ══════════════════════════════════════════════════════════
+
+def add_semantic_tags(chunks: list[dict]) -> list[dict]:                        # [NEW]
+    """
+    Gán semantic_tags dict vào mỗi chunk bằng regex.
+    Không dùng API.
+    Tags: doi_tuong, loai_van_ban, do_quan_trong.
+    """
+    # Keyword maps                                                             # [NEW]
+    DOI_TUONG_KW = {                                                           # [NEW]
+        "sinh viên": ["sinh viên", "sv", "người học", "học viên"],              # [NEW]
+        "giảng viên": ["giảng viên", "gv", "người dạy", "giáo viên"],          # [NEW]
+        "cán bộ": ["cán bộ", "nhân viên", "viên chức"],                        # [NEW]
+    }                                                                          # [NEW]
+    LOAI_VB_KW = {                                                             # [NEW]
+        "quy định": ["quy định", "điều", "khoản"],                             # [NEW]
+        "hướng dẫn": ["hướng dẫn", "thủ tục", "quy trình", "trình tự"],       # [NEW]
+        "quy chế": ["quy chế"],                                                # [NEW]
+        "thông báo": ["thông báo", "thông tin"],                               # [NEW]
+    }                                                                          # [NEW]
+    HIGH_IMPORTANCE_KW = [                                                     # [NEW]
+        "bắt buộc", "cấm", "kỷ luật", "buộc thôi học", "học bổng"             # [NEW]
+    ]                                                                          # [NEW]
+
+    print("\n[PHASE 2B++] Semantic Tagging (regex)")                           # [NEW]
+    print("=" * 60)                                                            # [NEW]
+
+    for chunk in chunks:                                                       # [NEW]
+        text_lower = chunk["text"].lower()                                     # [NEW]
+
+        # --- doi_tuong ---                                                    # [NEW]
+        detected_dt = []                                                       # [NEW]
+        for label, keywords in DOI_TUONG_KW.items():                           # [NEW]
+            if any(kw in text_lower for kw in keywords):                        # [NEW]
+                detected_dt.append(label)                                      # [NEW]
+        if not detected_dt:                                                    # [NEW]
+            detected_dt = ["tất cả"]                                           # [NEW]
+
+        # --- loai_van_ban ---                                                 # [NEW]
+        detected_lvb = []                                                      # [NEW]
+        for label, keywords in LOAI_VB_KW.items():                             # [NEW]
+            if any(kw in text_lower for kw in keywords):                        # [NEW]
+                detected_lvb.append(label)                                     # [NEW]
+        if not detected_lvb:                                                   # [NEW]
+            detected_lvb = ["quy định"]  # default                             # [NEW]
+
+        # --- do_quan_trong ---                                                # [NEW]
+        if any(kw in text_lower for kw in HIGH_IMPORTANCE_KW):                 # [NEW]
+            importance = "cao"                                                  # [NEW]
+        else:                                                                  # [NEW]
+            importance = "trung bình"  # mặc định                              # [NEW]
+
+        chunk["semantic_tags"] = {                                             # [NEW]
+            "doi_tuong": detected_dt,                                          # [NEW]
+            "loai_van_ban": detected_lvb,                                      # [NEW]
+            "do_quan_trong": importance,                                       # [NEW]
+        }                                                                      # [NEW]
+
+    # Stats                                                                    # [NEW]
+    from collections import Counter as _StatsCounter                           # [NEW]
+    imp_counts = _StatsCounter(c["semantic_tags"]["do_quan_trong"] for c in chunks)  # [NEW]
+    print(f"  Tagged {len(chunks)} chunks")                                    # [NEW]
+    print(f"  do_quan_trong: {dict(imp_counts)}")                              # [NEW]
+    print(f"[OK] Semantic tagging complete!")                                  # [NEW]
+
+    return chunks                                                              # [NEW]
+
+
+# ══════════════════════════════════════════════════════════
+# 2B+++ DECOUPLED RAG — Retrieval Summaries (GPT-4o-mini)     # [NEW]
+# ══════════════════════════════════════════════════════════
+
+SUMMARY_SYSTEM_PROMPT = """Bạn là trợ lý tóm tắt văn bản pháp lý tiếng Việt cho hệ thống RAG.
+Nhiệm vụ: Tạo bản tóm tắt ngắn để tối ưu retrieval (tìm kiếm).
+
+Yêu cầu:
+1. Tóm tắt nội dung chính ≤60 từ
+2. Liệt kê 5-8 từ khóa quan trọng nhất (keyword)
+3. Ghi rõ section header nếu có
+
+Trả về JSON object DUY NHẤT (KHÔNG markdown):
+{"summary": "...", "keywords": ["kw1", "kw2", ...]}"""                         # [NEW]
+
+
+def generate_retrieval_summaries(chunks: list[dict]) -> list[dict]:            # [NEW]
+    """
+    Gọi GPT-4o-mini để sinh text_for_retrieval và text_for_generation cho mỗi chunk.
+    Resume logic tương tự generate_qa_api() — lưu progress vào summary_progress.json.
+    """
+    import openai                                                              # [NEW]
+
+    api_key = os.environ.get("OPENAI_API_KEY", "")                             # [NEW]
+    if not api_key:                                                            # [NEW]
+        print("  [WARNING] Khong co OPENAI_API_KEY -> fallback text_with_context")  # [NEW]
+        for chunk in chunks:                                                   # [NEW]
+            chunk["text_for_retrieval"] = chunk.get("text_with_context", chunk["text"])  # [NEW]
+            chunk["text_for_generation"] = chunk["text"]                        # [NEW]
+        return chunks                                                          # [NEW]
+
+    client = openai.OpenAI(api_key=api_key)                                    # [NEW]
+
+    print("\n[PHASE 2B+++] Generate Retrieval Summaries (GPT-4o-mini)")        # [NEW]
+    print("=" * 60)                                                            # [NEW]
+
+    # Resume logic (cùng pattern với generate_qa_api)                          # [NEW]
+    progress_path = OUTPUT_DIR / "summary_progress.json"                       # [NEW]
+    if progress_path.exists():                                                 # [NEW]
+        with open(progress_path, "r", encoding="utf-8") as f:                  # [NEW]
+            progress_data = json.load(f)                                       # [NEW]
+        done_summaries = {item["chunk_id"]: item for item in progress_data.get("summaries", [])}  # [NEW]
+        print(f"  [RESUME] {len(done_summaries)} summaries đã có")             # [NEW]
+    else:                                                                      # [NEW]
+        done_summaries = {}                                                    # [NEW]
+
+    # Áp dụng summaries đã có                                                 # [NEW]
+    for chunk in chunks:                                                       # [NEW]
+        if chunk["id"] in done_summaries:                                      # [NEW]
+            chunk["text_for_retrieval"] = done_summaries[chunk["id"]]["text_for_retrieval"]  # [NEW]
+            chunk["text_for_generation"] = chunk["text"]                        # [NEW]
+
+    pending = [c for c in chunks if c["id"] not in done_summaries]             # [NEW]
+    print(f"  [PENDING] Còn {len(pending)} chunks cần API")                    # [NEW]
+
+    if not pending:                                                            # [NEW]
+        # Đảm bảo tất cả chunks đều có field                                  # [NEW]
+        for chunk in chunks:                                                   # [NEW]
+            chunk.setdefault("text_for_retrieval", chunk.get("text_with_context", chunk["text"]))  # [NEW]
+            chunk.setdefault("text_for_generation", chunk["text"])              # [NEW]
+        return chunks                                                          # [NEW]
+
+    consecutive_429 = 0                                                        # [NEW]
+    new_summaries = list(done_summaries.values())                               # [NEW]
+
+    for chunk in pending:                                                      # [NEW]
+        section = chunk.get("section", "")                                     # [NEW]
+        prompt = f"""{SUMMARY_SYSTEM_PROMPT}
+
+Section: {section}
+Đoạn văn bản:
+---
+{chunk['text']}
+---
+
+Trả về JSON object. KHÔNG markdown."""                                         # [NEW]
+
+        success = False                                                        # [NEW]
+        for attempt in range(3):                                               # [NEW]
+            try:                                                               # [NEW]
+                response = client.chat.completions.create(                      # [NEW]
+                    model="gpt-4o-mini",                                        # [NEW]
+                    messages=[{"role": "user", "content": prompt}],              # [NEW]
+                    temperature=0.1,                                           # [NEW]
+                )                                                              # [NEW]
+                resp = response.choices[0].message.content                      # [NEW]
+
+                # Parse JSON                                                   # [NEW]
+                resp_clean = re.sub(r'```json\s*', '', resp)                    # [NEW]
+                resp_clean = re.sub(r'```\s*', '', resp_clean)                  # [NEW]
+                json_match = re.search(r'\{.*\}', resp_clean, re.DOTALL)        # [NEW]
+
+                if json_match:                                                 # [NEW]
+                    data = json.loads(json_match.group(0))                      # [NEW]
+                    summary = str(data.get("summary", "")).strip()              # [NEW]
+                    keywords = data.get("keywords", [])                         # [NEW]
+                    if isinstance(keywords, list):                              # [NEW]
+                        keywords = [str(k).strip() for k in keywords]          # [NEW]
+                    else:                                                      # [NEW]
+                        keywords = []                                          # [NEW]
+
+                    # Build text_for_retrieval                                 # [NEW]
+                    kw_str = ", ".join(keywords) if keywords else ""            # [NEW]
+                    header_part = f"[{section}] " if section else ""            # [NEW]
+                    text_for_retrieval = f"{header_part}{summary}\nTừ khóa: {kw_str}"  # [NEW]
+
+                    chunk["text_for_retrieval"] = text_for_retrieval            # [NEW]
+                    chunk["text_for_generation"] = chunk["text"]                # [NEW]
+
+                    new_summaries.append({                                     # [NEW]
+                        "chunk_id": chunk["id"],                                # [NEW]
+                        "text_for_retrieval": text_for_retrieval,               # [NEW]
+                    })                                                         # [NEW]
+                    done_summaries[chunk["id"]] = {                             # [NEW]
+                        "chunk_id": chunk["id"],                                # [NEW]
+                        "text_for_retrieval": text_for_retrieval,               # [NEW]
+                    }                                                          # [NEW]
+                    consecutive_429 = 0                                        # [NEW]
+                    success = True                                             # [NEW]
+                    print(f"  [OK] {chunk['id']}: summary {len(summary)} chars, {len(keywords)} kw")  # [NEW]
+                    break                                                      # [NEW]
+                else:                                                          # [NEW]
+                    print(f"  [WARNING] {chunk['id']}: JSON parse fail (lần {attempt+1})")  # [NEW]
+
+            except Exception as e:                                             # [NEW]
+                err = str(e)                                                   # [NEW]
+                if "429" in err or "quota" in err.lower() or "rate" in err.lower():  # [NEW]
+                    consecutive_429 += 1                                       # [NEW]
+                    wait = 60                                                  # [NEW]
+                    m = re.search(r'retry.*?(\d+\.?\d*)\s*s', err, re.IGNORECASE)  # [NEW]
+                    if m:                                                      # [NEW]
+                        wait = float(m.group(1)) + 5                           # [NEW]
+
+                    if consecutive_429 >= 5:                                    # [NEW]
+                        print(f"\n  [PAUSE] Hết quota. Lưu {len(new_summaries)} summaries.")  # [NEW]
+                        with open(progress_path, "w", encoding="utf-8") as f:  # [NEW]
+                            json.dump({"summaries": new_summaries},            # [NEW]
+                                     f, ensure_ascii=False, indent=2)          # [NEW]
+                        # Fallback cho chunks chưa có summary                  # [NEW]
+                        for c in chunks:                                        # [NEW]
+                            c.setdefault("text_for_retrieval", c.get("text_with_context", c["text"]))  # [NEW]
+                            c.setdefault("text_for_generation", c["text"])      # [NEW]
+                        return chunks                                          # [NEW]
+
+                    print(f"  [WAIT] 429 (lần {attempt+1}). Chờ {wait:.0f}s...")  # [NEW]
+                    time.sleep(wait)                                           # [NEW]
+                else:                                                          # [NEW]
+                    print(f"  [ERROR] {chunk['id']}: {err[:80]}")              # [NEW]
+                    time.sleep(5)                                              # [NEW]
+
+        if not success:                                                        # [NEW]
+            # Fallback: dùng text_with_context                                 # [NEW]
+            chunk["text_for_retrieval"] = chunk.get("text_with_context", chunk["text"])  # [NEW]
+            chunk["text_for_generation"] = chunk["text"]                        # [NEW]
+            print(f"  [FALLBACK] {chunk['id']}: dùng text_with_context")       # [NEW]
+
+        # Save progress mỗi 10 chunks                                         # [NEW]
+        if len(done_summaries) % 10 == 0 and len(done_summaries) > 0:          # [NEW]
+            with open(progress_path, "w", encoding="utf-8") as f:              # [NEW]
+                json.dump({"summaries": new_summaries},                        # [NEW]
+                         f, ensure_ascii=False, indent=2)                      # [NEW]
+            print(f"  [SAVE] Saved: {len(new_summaries)} summaries")           # [NEW]
+
+        time.sleep(1)                                                          # [NEW]
+
+    # Save cuối                                                                # [NEW]
+    with open(progress_path, "w", encoding="utf-8") as f:                      # [NEW]
+        json.dump({"summaries": new_summaries},                                # [NEW]
+                 f, ensure_ascii=False, indent=2)                              # [NEW]
+
+    # Đảm bảo tất cả chunks đều có field                                      # [NEW]
+    for chunk in chunks:                                                       # [NEW]
+        chunk.setdefault("text_for_retrieval", chunk.get("text_with_context", chunk["text"]))  # [NEW]
+        chunk.setdefault("text_for_generation", chunk["text"])                  # [NEW]
+
+    print(f"\n[OK] Generated {len(new_summaries)} retrieval summaries")        # [NEW]
+    return chunks                                                              # [NEW]
+
+
+# ══════════════════════════════════════════════════════════
 # MAIN
 # ══════════════════════════════════════════════════════════
 if __name__ == "__main__":
@@ -1030,6 +1324,19 @@ if __name__ == "__main__":
     # 2B+: Normalize chunks & build parent map
     if not process_chunk_normalization():
         sys.exit(1)
+
+    # 2B++: Semantic tagging (regex, no API)                                   # [NEW]
+    chunks_path = OUTPUT_DIR / "chunks.json"                                   # [NEW]
+    with open(chunks_path, "r", encoding="utf-8") as f:                        # [NEW]
+        chunks = json.load(f)                                                  # [NEW]
+    chunks = add_semantic_tags(chunks)                                         # [NEW]
+
+    # 2B+++: Generate retrieval summaries (GPT-4o-mini)                        # [NEW]
+    chunks = generate_retrieval_summaries(chunks)                              # [NEW]
+
+    # Save chunks with new fields                                             # [NEW]
+    with open(chunks_path, "w", encoding="utf-8") as f:                        # [NEW]
+        json.dump(chunks, f, ensure_ascii=False, indent=2)                     # [NEW]
 
     # 2C: Vector Store (can GPU cho embedding nhanh)
     build_vector_store()
