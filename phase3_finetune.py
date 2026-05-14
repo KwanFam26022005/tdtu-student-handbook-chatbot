@@ -17,6 +17,9 @@ Chạy:
 """
 
 import os
+# Thêm dòng này để tối ưu phân mảnh VRAM, tránh lỗi CUDA out of memory
+os.environ["PYTORCH_ALLOC_CONF"] = "expandable_segments:True"
+
 import json
 import shutil
 from pathlib import Path
@@ -41,8 +44,8 @@ TARGET_MODULES = [
 ]
 
 # Training config
-BATCH_SIZE = 4
-GRAD_ACCUM_STEPS = 4
+BATCH_SIZE = 1           # Hạ xuống 1 để tiết kiệm VRAM
+GRAD_ACCUM_STEPS = 16    # Tăng lên 16 để giữ nguyên Effective Batch Size là 16
 LEARNING_RATE = 2e-4
 NUM_EPOCHS = 3
 WARMUP_STEPS = 10
@@ -54,7 +57,8 @@ OUTPUT_DIR_TRAIN = BASE_DIR / "outputs" / "finetune"
 HF_REPO_ID = "KwanFam26022005/tdtu-qwen2.5-3b-lora"
 
 # Google Drive backup (tự động sao lưu sau mỗi epoch)
-DRIVE_BACKUP_DIR = Path("/content/drive/MyDrive/TDTU_Chatbot_Data/finetune")
+# DRIVE_BACKUP_DIR = Path("/content/drive/MyDrive/TDTU_Chatbot_Data/finetune")
+DRIVE_BACKUP_DIR = Path("/kaggle/working/backup_checkpoints")
 
 # System prompt cho chatbot
 SYSTEM_PROMPT = """Bạn là trợ lý AI chuyên về quy chế và sổ tay sinh viên Trường Đại học Tôn Đức Thắng (TDTU).
@@ -262,6 +266,7 @@ def train(model, tokenizer, dataset, eval_dataset=None):
     
     training_args = TrainingArguments(
         per_device_train_batch_size=BATCH_SIZE,
+        per_device_eval_batch_size=1,
         gradient_accumulation_steps=GRAD_ACCUM_STEPS,
         warmup_steps=WARMUP_STEPS,
         num_train_epochs=NUM_EPOCHS,
@@ -274,6 +279,10 @@ def train(model, tokenizer, dataset, eval_dataset=None):
         lr_scheduler_type="cosine",
         seed=42,
         output_dir=str(OUTPUT_DIR_TRAIN),
+        
+        # --- BẬT GRADIENT CHECKPOINTING ĐỂ TIẾT KIỆM VRAM ---
+        gradient_checkpointing=True,
+        gradient_checkpointing_kwargs={"use_reentrant": False},
         
         # --- CÁC DÒNG CẦN CHỈNH SỬA BẮT ĐẦU TỪ ĐÂY ---
         save_strategy="steps",                       # Đổi từ "epoch" sang "steps"
