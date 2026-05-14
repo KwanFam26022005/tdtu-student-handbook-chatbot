@@ -26,6 +26,8 @@ Xây dựng hệ thống chatbot hỏi đáp tiếng Việt chuyên biệt cho d
 | Sparse Retriever | BM25 (rank_bm25) |
 | Fusion | Reciprocal Rank Fusion (RRF, k=60) |
 | **HyDE** | **Hypothetical Document Embedding (Gao et al., 2022)** |
+| **Decoupled RAG** | **text_for_retrieval (GPT-4o-mini summary) + text_for_generation (full text)** |
+| **Semantic Tagging** | **Regex-based: đối tượng / loại văn bản / độ quan trọng** |
 | Reranker | BAAI/bge-reranker-v2-m3 (Cross-Encoder) |
 | Base LLM | Qwen2.5-3B-Instruct |
 | Fine-tuning | QLoRA 4-bit (r=16, α=32, NF4) |
@@ -49,20 +51,23 @@ flowchart TB
     end
 
     subgraph Phase2["Phase 2 — Data Processing (phase2_process.py)"]
-        CLEAN["2A: Cleaning &\nNormalization"]
+        CLEAN["2A: Cleaning &\nNormalization\n+ viết tắt TDTU + header lặp"]
         CHUNK["2B: Semantic Chunking\n(Điều/Khoản aware)"]
-        NORM["2B+: Chunk Normalize\n(merge tiny / split large)"]
-        FAISS["2C: FAISS Index\n(bge-m3 embeddings)"]
+        NORM["2B+: Chunk Normalize\n(merge tiny / split large\ntable-aware header)"]
+        STAG["2B++: Semantic Tagging\n(đối tượng/loại VB/độ QT)"]
+        SUMM["2B+++: Retrieval Summaries\n(GPT-4o-mini → text_for_retrieval)"]
+        FAISS["2C: FAISS Index\n(embed text_for_retrieval)"]
         QA["2D: QA Generation\n(API + Template)"]
-        RAW --> CLEAN --> CHUNK --> NORM --> FAISS
+        RAW --> CLEAN --> CHUNK --> NORM --> STAG --> SUMM --> FAISS
         CHUNK --> QA
     end
 
     subgraph Phase3["Phase 3 — Fine-tuning"]
         BASE["Qwen2.5-3B-Instruct"]
-        QLORA["QLoRA 4-bit\nr=16, α=32, 3 epochs"]
+        QLORA["QLoRA 4-bit\nr=16, α=32, 3 epochs\n+ enriched data (semantic_tags\n+ text_for_generation)"]
         LORA["LoRA Adapter"]
         QA --> QLORA
+        SUMM -.-> QLORA
         BASE --> QLORA --> LORA
     end
 
@@ -70,14 +75,14 @@ flowchart TB
         QUERY["User Query"]
         REWRITE["Query Rewriter\n(synonym mapping)"]
         HYDE_BOX["HyDE Generator\n(LLM → hypothesis)"]
-        FILTER["Metadata Filter\n(topic → source)"]
-        HYBRID["Hybrid Retrieval\nBM25 + Dense → RRF"]
-        RERANK["Cross-Encoder Reranker\nbge-reranker-v2-m3"]
+        FILTER["Metadata Filter\n(topic + semantic_tags)"]
+        HYBRID["Hybrid Retrieval\nBM25 + Dense → RRF\n(text_for_retrieval)"]
+        RERANK["Cross-Encoder Reranker\nbge-reranker-v2-m3\n(text_for_generation)"]
         CRAG_BOX["CRAG Gate\n(relevance check)"]
         EXPAND["Hierarchical\nExpander\n(Chương>Điều>Khoản)"]
-        COMPRESS["Semantic\nCompressor\n(bge-m3 cosine)"]
-        GEN["LLM Generator\n(base or fine-tuned)"]
-        ANS["Answer + Sources"]
+        COMPRESS["Semantic\nCompressor\n(text_for_generation)"]
+        GEN["LLM Generator\n+ semantic_meta"]
+        ANS["Answer + Sources\n+ semantic_tags"]
         QUERY --> REWRITE --> FILTER
         REWRITE --> HYDE_BOX
         FAISS --> HYBRID
@@ -103,19 +108,19 @@ flowchart TB
 flowchart LR
     Q["Query"] --> QR["QueryRewriter"]
     QR --> HYDE["HyDEGenerator\nLLM → hypothesis"]
-    QR --> MF["MetadataFilter"]
-    HYDE --> DR["DenseRetriever\nFAISS + bge-m3"]
+    QR --> MF["MetadataFilter\ntopic + semantic_tags.doi_tuong"]
+    HYDE --> DR["DenseRetriever\nFAISS + bge-m3\n(text_for_retrieval)"]
     MF --> DR
-    MF --> SR["SparseRetriever\nBM25"]
+    MF --> SR["SparseRetriever\nBM25\n(text_for_retrieval)"]
     DR --> RRF["RRF Fusion\nk=60"]
     SR --> RRF
-    RRF --> RE["CrossEncoder\nReranker\ntop-5"]
+    RRF --> RE["CrossEncoder\nReranker\n(text_for_generation)\ntop-5"]
     RE --> CRAG["CRAG Gate\nCORRECT/AMBIGUOUS/\nINCORRECT"]
     CRAG -->|CORRECT/AMBIGUOUS| HE["Hierarchical\nExpander\nChương>Điều>Khoản"]
     CRAG -->|INCORRECT| FAIL["Fallback\nResponse"]
-    HE --> SC["Semantic\nCompressor\nbge-m3 cosine"]
-    SC --> LLM["Qwen2.5-3B\n+ LoRA"]
-    LLM --> A["Answer"]
+    HE --> SC["Semantic\nCompressor\n(text_for_generation)"]
+    SC --> LLM["Qwen2.5-3B\n+ LoRA\n+ semantic_meta"]
+    LLM --> A["Answer\n+ semantic_tags"]
 ```
 
 ---
@@ -190,9 +195,9 @@ flowchart LR
 
 ### Phase 2 — Data Processing (`phase2_process.py`)
 
-**Mục tiêu:** Biến raw text thành knowledge base có cấu trúc: clean text → chunks → normalize → FAISS vector store → QA pairs cho fine-tuning. Toàn bộ pipeline nằm trong **một file duy nhất** `phase2_process.py` để dễ quản lý và chạy tuần tự.
+**Mục tiêu:** Biến raw text thành knowledge base có cấu trúc: clean text → chunks → normalize → semantic tags → retrieval summaries → FAISS vector store → QA pairs cho fine-tuning. Toàn bộ pipeline nằm trong **một file duy nhất** `phase2_process.py` để dễ quản lý và chạy tuần tự.
 
-**5 bước con:**
+**7 bước con:**
 
 #### 2A — Cleaning & Normalization
 
@@ -201,6 +206,8 @@ flowchart LR
 - Sửa lỗi OCR chữ Đ (8 patterns)
 - Gộp dòng bị ngắt giữa chừng (regex tiếng Việt, bảo toàn dòng bảng Markdown `|`)
 - Gộp khoảng trắng thừa, xóa dòng trống liên tiếp
+- **[MỚI] Chuẩn hóa viết tắt TDTU:** `SV→sinh viên`, `ĐH→đại học`, `P.ĐH→Phòng đại học`, `HK→học kỳ`, `TC→tín chỉ`, `GPA→điểm trung bình tích lũy`. Chỉ thay khi đứng riêng (word boundary), không thay trong URL/code.
+- **[MỚI] Loại bỏ dòng header/footer lặp:** nếu một dòng xuất hiện ≥3 lần trong cùng file, xóa toàn bộ occurrence (giữ lần đầu tiên).
 
 #### 2B — Semantic Chunking
 
@@ -210,18 +217,41 @@ flowchart LR
 - Bảo toàn Markdown table (merge contiguous table lines thành 1 block)
 - Thêm context header: `[source] - Chương X - Điều Y`
 
-#### 2B+ — Chunk Normalization (tích hợp trong `phase2_process.py`)
+#### 2B+ — Chunk Normalization
 
 - **Merge tiny chunks** (<80 chars): gộp vào chunk liền kề cùng source (`merge_tiny_chunks()`)
 - **Split oversized chunks** (>3000 chars): tách tại paragraph boundary (`split_large_chunks()`)
+- **[MỚI] Table-aware header injection:** nếu chunk chứa Markdown table (`|`), tách 2 dòng đầu (header + divider row) và prepend vào mỗi sub-chunk khi split — đảm bảo mỗi sub-chunk bảng đều có header cột.
 - **Parent-child mapping:** build `parent_map.json` — liên kết chunk với siblings cùng section/chapter (`build_parent_map()`)
-- Được gọi tự động giữa bước 2B và 2C trong pipeline
+
+#### 2B++ — Semantic Tagging (`add_semantic_tags()`) — [MỚI]
+
+Gán `semantic_tags` dict vào mỗi chunk **bằng regex** (không dùng API):
+
+| Tag | Giá trị | Cách detect |
+|---|---|---|
+| `doi_tuong` | `["sinh viên"\|"giảng viên"\|"cán bộ"\|"tất cả"]` | Keyword matching trên text |
+| `loai_van_ban` | `["quy định"\|"hướng dẫn"\|"quy chế"\|"thông báo"]` | Pattern matching đầu file/section |
+| `do_quan_trong` | `"cao"\|"trung bình"\|"thấp"` | `"cao"` nếu chứa: bắt buộc, cấm, kỷ luật, buộc thôi học, học bổng |
+
+#### 2B+++ — Decoupled RAG: Retrieval Summaries (`generate_retrieval_summaries()`) — [MỚI]
+
+Gọi **GPT-4o-mini** để sinh 2 field mới cho mỗi chunk:
+
+| Field | Mô tả | Sử dụng |
+|---|---|---|
+| `text_for_retrieval` | Tóm tắt ≤60 từ + 5-8 từ khóa + section header | Embed vào FAISS, index BM25 |
+| `text_for_generation` | Giữ nguyên `text` gốc đầy đủ | Đưa vào LLM trả lời |
+
+- **Decoupled architecture:** tách biệt văn bản dùng cho tìm kiếm (ngắn, keyword-dense) và văn bản dùng cho sinh câu trả lời (đầy đủ, chính xác).
+- Resume logic: lưu progress vào `processed/summary_progress.json`, cùng pattern với `generate_qa_api()`.
+- Fallback: nếu không có `OPENAI_API_KEY`, dùng `text_with_context` thay thế.
 
 #### 2C — Build Vector Store
 
 - Embedding model: **BAAI/bge-m3** (multilingual, 1024 dimensions)
 - Index: **FAISS IndexFlatIP** (inner product = cosine vì đã normalize)
-- Embed `text_with_context` (có context header)
+- **[MỚI] Embed `text_for_retrieval`** (tóm tắt + từ khóa) thay vì `text_with_context` — cải thiện retrieval precision
 - Batch size: 32, normalize_embeddings=True
 
 #### 2D — Generate QA Pairs
@@ -235,12 +265,12 @@ flowchart LR
 **Thứ tự thực thi khi chạy `python phase2_process.py`:**
 
 ```
-2A (Cleaning) → 2B (Chunking) → 2B+ (Normalize) → 2C (FAISS) → 2D (QA Gen)
+2A (Cleaning) → 2B (Chunking) → 2B+ (Normalize) → 2B++ (Semantic Tags) → 2B+++ (Retrieval Summaries) → 2C (FAISS) → 2D (QA Gen)
 ```
 
 **Input/Output:**
 - Input: `raw_text/*.txt`
-- Output: `processed/chunks.json`, `processed/faiss_index.bin`, `processed/parent_map.json`, `processed/qa_train.json`, `processed/qa_test.json`
+- Output: `processed/chunks.json`, `processed/faiss_index.bin`, `processed/parent_map.json`, `processed/summary_progress.json`, `processed/qa_train.json`, `processed/qa_test.json`
 
 **Kết quả thực nghiệm Phase 2:**
 
@@ -306,7 +336,7 @@ flowchart LR
 > **Nhận xét:** Chunking structure-aware nhận diện được 36 Điều khác nhau trên 4 Chương, bao phủ 45.7% tổng chunks — cho thấy phần lớn văn bản quy chế TDTU có cấu trúc pháp lý rõ ràng. QA dataset đạt 3,226 cặp (gấp 10× mục tiêu 300), phân bố đều 4 loại câu hỏi (~25% mỗi loại). Gần 50% chunks chứa keyword "sinh viên", khẳng định corpus phù hợp cho domain chatbot sổ tay sinh viên.
 
 > **SLIDE NOTE:**  
-> "Phase 2 xử lý 137K từ thành 768 chunks (median 685 ký tự), nhận diện 36 Điều pháp lý. FAISS index 3MB với bge-m3 1024-dim. Sinh 3,226 QA pairs bằng API, phân bố đều 4 loại: factual/conditional/procedural/reasoning. Train 3,176, test 50."
+> "Phase 2 xử lý 137K từ thành 768 chunks (median 685 ký tự), nhận diện 36 Điều pháp lý. Mỗi chunk được gán semantic_tags (đối tượng/loại VB/độ quan trọng) và sinh text_for_retrieval bằng GPT-4o-mini (decoupled RAG). FAISS index 3MB với bge-m3 1024-dim. Sinh 3,226 QA pairs bằng API."
 
 ---
 
@@ -346,11 +376,12 @@ flowchart LR
 **Features bổ sung:**
 - **Google Drive backup callback:** tự động copy checkpoint lên Drive sau mỗi save
 - **Resume from checkpoint:** tìm checkpoint local → Drive → train from scratch
-- **Chat format:** System prompt + User question + Assistant answer (Qwen chat template)
+- **[MỚI] Enriched training data:** Mỗi QA pair được bổ sung grounding context từ `text_for_generation` (≤1200 chars) và metadata header từ `semantic_tags` (`[Đối tượng: sinh viên | Loại: quy định | Mức quan trọng: cao]`). Model học trả lời **trong context quy chế thực tế**, khớp với format RAG lúc inference.
+- **Chat format:** System prompt + User (context + question) + Assistant answer (Qwen chat template)
 - **HuggingFace Hub push:** tự động push LoRA adapter nếu có `HF_TOKEN`
 
 **Input/Output:**
-- Input: `processed/qa_train.json` (300+ QA pairs)
+- Input: `processed/qa_train.json` (300+ QA pairs) + `processed/chunks.json` (semantic_tags, text_for_generation)
 - Output: `outputs/finetune/lora_adapter/`
 
 > **SLIDE NOTE:**  
@@ -360,46 +391,48 @@ flowchart LR
 
 ### Phase 4 — RAG Pipeline (`phase4_rag.py`)
 
-**Mục tiêu:** Hệ thống truy xuất và sinh câu trả lời end-to-end với 8 cải tiến so với RAG cơ bản.
+**Mục tiêu:** Hệ thống truy xuất và sinh câu trả lời end-to-end với 9 cải tiến so với RAG cơ bản.
 
 **Kiến trúc 10 bước:**
 
-| Bước | Component | Mô tả |
-|---|---|---|
-| 1 | QueryRewriter | Dictionary-based synonym mapping (24 cặp slang → formal) |
-| 2 | **HyDEGenerator** | **LLM sinh đoạn quy chế giả định (max 120 tokens), embed cho dense retrieval (Gao et al., 2022)** |
-| 3 | MetadataFilter | Pre-filter chunks theo topic (8 categories) → source mapping |
-| 4 | HybridRetriever | BM25 (sparse) + FAISS/bge-m3 (dense + hypothesis), top-20 mỗi retriever |
-| 5 | RRF Fusion | Reciprocal Rank Fusion (k=60), merge results từ multiple query variants |
-| 6 | CrossEncoderReranker | bge-reranker-v2-m3, max_length=512, chọn top-5 |
-| 7 | **CRAGRelevanceGate** | **Kiểm tra chất lượng retrieval: CORRECT / AMBIGUOUS / INCORRECT (Yan et al., 2024)** |
-| 8 | **HierarchicalExpander** | **Khai thác cây pháp lý Chương>Điều>Khoản, kéo sibling cùng Điều + parent_map** |
-| 9 | **SemanticCompressor** | **Sentence embedding similarity (bge-m3 cosine) thay vì keyword overlap, giữ thứ tự gốc** |
-| 10 | LLM Generator | Qwen2.5-3B (base hoặc fine-tuned), max_new_tokens=512 |
+| Bước | Component | Mô tả | Data field |
+|---|---|---|---|
+| 1 | QueryRewriter | Dictionary-based synonym mapping (24 cặp slang → formal) | — |
+| 2 | **HyDEGenerator** | **LLM sinh đoạn quy chế giả định (max 256 tokens) (Gao et al., 2022)** | — |
+| 3 | MetadataFilter | Pre-filter theo topic (8 categories) + **semantic_tags.doi_tuong** | `semantic_tags` |
+| 4 | HybridRetriever | BM25 + FAISS/bge-m3 (dense + hypothesis), top-20 | `text_for_retrieval` |
+| 5 | RRF Fusion | Reciprocal Rank Fusion (k=60), merge multi-variant results | — |
+| 6 | CrossEncoderReranker | bge-reranker-v2-m3, max_length=512, top-5 | `text_for_generation` |
+| 7 | **CRAGRelevanceGate** | **CORRECT / AMBIGUOUS / INCORRECT (Yan et al., 2024)** | — |
+| 8 | **HierarchicalExpander** | **Cây pháp lý Chương>Điều>Khoản, sibling + parent_map** | — |
+| 9 | **SemanticCompressor** | **bge-m3 cosine similarity, giữ thứ tự gốc** | `text_for_generation` |
+| 10 | LLM Generator | Qwen2.5-3B + LoRA + **semantic_meta** hint | `text_for_generation` |
 
-**8 cải tiến so với RAG cơ bản:**
+**9 cải tiến so với RAG cơ bản:**
 
 1. **Hybrid Retrieval:** BM25 + Dense thay vì chỉ Dense → bắt được cả exact match lẫn semantic similarity
-2. **Metadata Pre-filtering:** Thu hẹp search space theo topic trước khi retrieve
+2. **Metadata Pre-filtering:** Thu hẹp search space theo topic trước khi retrieve. **[MỚI]** Bổ sung filter theo `semantic_tags.doi_tuong` — khi query nhắc "sinh viên", chỉ tìm trong chunks tagged cho sinh viên.
 3. **Query Rewriting:** Chuyển slang sinh viên thành ngôn ngữ pháp lý (vd: "đuổi học" → "buộc thôi học")
 4. **Hierarchical Context Expansion:** Khai thác cây Chương>Điều>Khoản — khi retrieve Khoản 2, kéo toàn bộ Khoản cùng Điều (không chỉ flat siblings)
 5. **Semantic Compression:** Dùng bge-m3 cosine similarity chọn câu liên quan (thay vì keyword overlap), hiểu được "buộc thôi học" ≈ "đuổi học", giữ câu "trừ trường hợp quy định tại..."
 6. **HyDE:** LLM sinh câu trả lời giả định → embed hypothesis thay vì embed query → dense retrieval chính xác hơn
 7. **CRAG (Corrective RAG):** Kiểm tra reranker score → nếu context không liên quan, trả fallback thay vì hallucinate; nếu mơ hồ, thêm cảnh báo vào prompt
 8. **Sentence Order Preservation:** Sau khi chọn câu quan trọng, sắp xếp lại theo vị trí gốc → giữ mạch logic văn bản pháp lý
+9. **[MỚI] Decoupled RAG:** Tách biệt `text_for_retrieval` (tóm tắt ngắn, keyword-dense — dùng cho FAISS/BM25) và `text_for_generation` (full text — dùng cho reranker, compressor, LLM). Retriever tìm đúng hơn nhờ tóm tắt tập trung; LLM sinh chính xác hơn nhờ full text. Semantic metadata (`semantic_tags`) được inject vào LLM prompt dưới dạng `semantic_meta` hint.
 
 **LLM Generator config:**
 - 4-bit quantization, float16
 - max_new_tokens=512, temperature=0.3, top_p=0.9
 - repetition_penalty=1.1
 - System prompt yêu cầu trích dẫn Điều/Khoản cụ thể
+- **[MỚI]** `semantic_meta` parameter: inject metadata hints (đối tượng, loại văn bản) từ top chunks vào prompt
 
 **Input/Output:**
-- Input: User query + FAISS index + chunks + LoRA adapter (optional)
-- Output: Answer + sources + sections + retrieval scores + hyde_hypothesis + crag_verdict
+- Input: User query + FAISS index + chunks (với `text_for_retrieval`, `text_for_generation`, `semantic_tags`) + LoRA adapter (optional)
+- Output: Answer + sources + sections + retrieval scores + hyde_hypothesis + crag_verdict + **semantic_tags**
 
 > **SLIDE NOTE:**  
-> "Phase 4 là **Advanced RAG / Modular RAG** pipeline với 8 cải tiến: hybrid retrieval, metadata filtering, query rewriting, **HyDE**, **hierarchical expansion** (cây pháp lý Chương>Điều>Khoản), **semantic compression** (bge-m3 cosine thay keyword overlap), **CRAG** (kiểm tra relevance trước khi sinh), và sentence order preservation. Pipeline 10 bước, rerank bằng cross-encoder."
+> "Phase 4 là **Advanced RAG / Modular RAG** pipeline với 9 cải tiến: hybrid retrieval, metadata filtering (+ semantic_tags), query rewriting, **HyDE**, **hierarchical expansion**, **semantic compression**, **CRAG**, sentence order preservation, và **Decoupled RAG** (tách text_for_retrieval / text_for_generation). Pipeline 10 bước, rerank bằng cross-encoder trên full text."
 
 ---
 
@@ -548,7 +581,7 @@ flowchart LR
 - **Fine-tuning QLoRA là yếu tố then chốt:** Config D (FT+RAG) đạt BLEU 18.53, ROUGE-L 46.25, BERTScore 77.93 — vượt trội Config A (gốc) lần lượt +356%, +75%, +13.8%. QLoRA fine-tuning trên 3,176 QA pairs domain-specific đã tạo ra sự khác biệt lớn nhất.
 - **RAG cải thiện thêm khi kết hợp fine-tuning:** RAG đơn lẻ (Config B) chỉ cải thiện nhẹ so với baseline, nhưng khi kết hợp FT (Config D vs C), RAG đóng góp +6.6% BLEU và +5.9% ROUGE-L.
 - **Retrieval pipeline đạt 86% Recall@5:** Hybrid retrieval (BM25 + Dense + RRF) kết hợp cross-encoder reranking cho phép tìm đúng nguồn quy chế trong 43/50 câu hỏi.
-- **5 cải tiến RAG** (query rewriting, metadata filter, hybrid retrieval, parent expansion, contextual compression) đảm bảo context chất lượng cho LLM.
+- **9 cải tiến RAG** (query rewriting, metadata filter + semantic_tags, hybrid retrieval, HyDE, hierarchical expansion, semantic compression, CRAG, sentence order preservation, decoupled RAG) đảm bảo context chất lượng cho LLM.
 - **QLoRA cho phép fine-tune trên Colab Free:** Mô hình 3B parameters, chỉ train ~0.5% tham số, chạy trên T4 GPU (~15GB VRAM).
 - **Pipeline 6 phase end-to-end** từ PDF scan → chatbot demo, có thể tái sử dụng cho domain khác.
 
@@ -578,9 +611,9 @@ flowchart LR
 | 2 | Tổng quan & Bài toán | Motivation, 29 văn bản quy chế, RAG + Fine-tuning | 2 phút |
 | 3 | Kiến trúc tổng thể | Mermaid diagram 6 phase, stack kỹ thuật | 2 phút |
 | 4 | Phase 1 — OCR | GPT-4o-mini Vision, 137K từ, 2,975 dòng bảng | 1.5 phút |
-| 5 | Phase 2 — Data Processing | 768 chunks, 3,226 QA, FAISS 3MB | 2 phút |
-| 6 | Phase 3 — Fine-tuning | QLoRA config, training curves, Colab setup | 2 phút |
-| 7 | Phase 4 — RAG Pipeline | 7-step pipeline, 5 cải tiến, sơ đồ chi tiết | 3 phút |
+| 5 | Phase 2 — Data Processing | 768 chunks, semantic tagging, decoupled RAG (text_for_retrieval/generation), 3,226 QA, FAISS 3MB | 2 phút |
+| 6 | Phase 3 — Fine-tuning | QLoRA config, enriched training (semantic_tags + grounding context), Colab setup | 2 phút |
+| 7 | Phase 4 — RAG Pipeline | 10-step pipeline, 9 cải tiến, decoupled retrieval/generation, sơ đồ chi tiết | 3 phút |
 | 8 | Phase 5 — Evaluation | Ma trận A/B/C/D, Config D tốt nhất | 2 phút |
 | 9 | Kết quả & Phân tích | BLEU 18.53, ROUGE-L 46.25, FT +328% vs baseline | 2 phút |
 | 10 | Phase 6 — Demo LIVE | Chạy demo Gradio trực tiếp, hỏi 2-3 câu mẫu | 3 phút |

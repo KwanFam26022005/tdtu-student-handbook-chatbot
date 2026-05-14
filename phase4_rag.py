@@ -102,9 +102,10 @@ class SparseRetriever:
         print("  [INIT] Building BM25 index...")
         self.chunks = chunks
         
-        # Tokenize đơn giản cho tiếng Việt
+        # [MOD] Tokenize dùng text_for_retrieval (decoupled RAG), fallback text_with_context
         self.tokenized_corpus = [
-            self._tokenize(c["text_with_context"]) for c in chunks
+            self._tokenize(c.get("text_for_retrieval", c.get("text_with_context", c["text"])))  # [MOD]
+            for c in chunks
         ]
         self.bm25 = BM25Okapi(self.tokenized_corpus)
     
@@ -200,25 +201,42 @@ class MetadataFilter:
         'thu_vien': r'thư viện|mượn sách|tài liệu|phòng đọc',
     }
 
+    # [NEW] Map query keywords → semantic_tags.doi_tuong                       # [NEW]
+    DOI_TUONG_QUERY_MAP = {                                                    # [NEW]
+        'sinh viên': 'sinh viên', 'sv': 'sinh viên',                           # [NEW]
+        'giảng viên': 'giảng viên', 'gv': 'giảng viên',                        # [NEW]
+        'cán bộ': 'cán bộ', 'nhân viên': 'cán bộ',                            # [NEW]
+    }                                                                          # [NEW]
+
     def __init__(self, chunks: list[dict]):
         self.source_topics = defaultdict(set)  # topic → set of source names
+        self.chunks_by_doi_tuong = defaultdict(list)                           # [NEW]
+        self.chunks_by_importance = defaultdict(list)                           # [NEW]
         self._build_index(chunks)
 
     def _build_index(self, chunks: list[dict]):
-        """Scan all chunks to map topics → sources."""
-        for chunk in chunks:
+        """Scan all chunks to map topics → sources + semantic_tags index."""
+        for i, chunk in enumerate(chunks):
             source = chunk.get("source", "")
             text_lower = chunk["text"].lower()
             for topic, pattern in self.TOPIC_PATTERNS.items():
                 if re.search(pattern, text_lower):
                     self.source_topics[topic].add(source)
-        print(f"  [INIT] MetadataFilter: {len(self.source_topics)} topics indexed")
+            # [NEW] Index by semantic_tags
+            tags = chunk.get("semantic_tags", {})                               # [NEW]
+            for dt in tags.get("doi_tuong", []):                                # [NEW]
+                self.chunks_by_doi_tuong[dt].append(i)                          # [NEW]
+            importance = tags.get("do_quan_trong", "trung bình")                # [NEW]
+            self.chunks_by_importance[importance].append(i)                      # [NEW]
+        print(f"  [INIT] MetadataFilter: {len(self.source_topics)} topics, "
+              f"{len(self.chunks_by_doi_tuong)} doi_tuong groups indexed")       # [MOD]
 
     def filter_chunks(
         self, query: str, chunks: list[dict], min_results: int = 20
     ) -> list[dict]:
         """
         Filter chunks to only include relevant sources.
+        Also filters by semantic_tags.doi_tuong if detected in query.
         Returns full set if no topic matches or too few results.
         """
         query_lower = query.lower()
@@ -229,14 +247,29 @@ class MetadataFilter:
                 relevant_sources.update(self.source_topics.get(topic, set()))
 
         if not relevant_sources:
-            return chunks  # No match → no filter
+            filtered = chunks
+        else:
+            filtered = [
+                c for c in chunks if c.get("source", "") in relevant_sources
+            ]
+            if len(filtered) < min_results:
+                filtered = chunks
 
-        filtered = [
-            c for c in chunks if c.get("source", "") in relevant_sources
-        ]
+        # [NEW] Thêm filter theo doi_tuong từ semantic_tags                    # [NEW]
+        detected_dt = None                                                     # [NEW]
+        for kw, dt_label in self.DOI_TUONG_QUERY_MAP.items():                  # [NEW]
+            if kw in query_lower:                                              # [NEW]
+                detected_dt = dt_label                                         # [NEW]
+                break                                                          # [NEW]
 
-        if len(filtered) < min_results:
-            return chunks  # Too few → fallback
+        if detected_dt:                                                        # [NEW]
+            dt_filtered = [                                                     # [NEW]
+                c for c in filtered                                             # [NEW]
+                if detected_dt in c.get("semantic_tags", {}).get("doi_tuong", ["tất cả"])  # [NEW]
+                or "tất cả" in c.get("semantic_tags", {}).get("doi_tuong", ["tất cả"])  # [NEW]
+            ]                                                                  # [NEW]
+            if len(dt_filtered) >= min_results:                                # [NEW]
+                filtered = dt_filtered                                         # [NEW]
 
         return filtered
 
@@ -512,8 +545,8 @@ class SemanticCompressor:
                 header_parts.append(chunk["section"])
             header = " - ".join(header_parts)
 
-            # Chunk ngắn → giữ nguyên toàn bộ, không compress
-            chunk_text = chunk["text"]
+            # [MOD] Dùng text_for_generation (full text) thay vì text
+            chunk_text = chunk.get("text_for_generation", chunk["text"])        # [MOD]
             if len(chunk_text) < 1500:
                 context_parts.append(f"{header}\n{chunk_text}")
                 continue
@@ -643,8 +676,8 @@ class CrossEncoderReranker:
         """Rerank results bằng cross-encoder"""
         if not results:
             return []
-        
-        pairs = [(query, r["chunk"]["text_with_context"]) for r in results]
+        # [MOD] Dùng text_for_generation cho reranking (full text, chính xác hơn summary)
+        pairs = [(query, r["chunk"].get("text_for_generation", r["chunk"].get("text_with_context", r["chunk"]["text"]))) for r in results]  # [MOD]
         scores = self.model.predict(pairs)
         
         # Gán score mới
@@ -694,7 +727,7 @@ class LLMGenerator:
         self.model.eval()
         print(f"  [OK] LLM ready! (Fine-tuned: {self.is_finetuned})")
     
-    def generate(self, query: str, context: str = "") -> str:
+    def generate(self, query: str, context: str = "", semantic_meta: str = "") -> str:  # [MOD]
         """Generate answer cho query, với hoặc không có RAG context"""
         
         if context:
@@ -706,6 +739,9 @@ class LLMGenerator:
 
 Câu hỏi: {query}
 Hãy trả lời dựa trên ngữ cảnh trên."""
+        elif semantic_meta:                                                    # [NEW]
+            # No context nhưng có metadata gợi ý                               # [NEW]
+            user_message = f"[{semantic_meta}]\n\nCâu hỏi: {query}"            # [NEW]
         else:
             # No-RAG mode: chỉ dùng kiến thức sẵn
             user_message = query
@@ -908,8 +944,24 @@ class RAGPipeline:
                            "cho câu hỏi này. Hãy trả lời thận trọng và ghi rõ nếu không "
                            "chắc chắn.]\n\n" + context)
 
+            # [NEW] Collect semantic_tags từ top chunks cho response           # [NEW]
+            top_tags = []                                                      # [NEW]
+            for r in top_chunks:                                               # [NEW]
+                t = r["chunk"].get("semantic_tags", {})                         # [NEW]
+                if t:                                                          # [NEW]
+                    top_tags.append(t)                                         # [NEW]
+
+            # [NEW] Build semantic meta string cho LLM                         # [NEW]
+            sem_parts = set()                                                  # [NEW]
+            for t in top_tags:                                                 # [NEW]
+                for dt in t.get("doi_tuong", []):                               # [NEW]
+                    sem_parts.add(f"Đối tượng: {dt}")                            # [NEW]
+                for lvb in t.get("loai_van_ban", []):                           # [NEW]
+                    sem_parts.add(f"Loại: {lvb}")                              # [NEW]
+            semantic_meta = " | ".join(sorted(sem_parts)) if sem_parts else ""  # [NEW]
+
             # Step 8: Generate
-            answer = self.llm.generate(query, context=context)
+            answer = self.llm.generate(query, context=context, semantic_meta=semantic_meta)  # [MOD]
 
             return {
                 "answer": answer,
@@ -923,6 +975,7 @@ class RAGPipeline:
                 "query_variants": query_variants,
                 "hyde_hypothesis": hypothesis,
                 "crag": crag_result,
+                "semantic_tags": top_tags,                                     # [NEW]
                 "mode": "RAG-Enhanced+HyDE+CRAG"
             }
         else:

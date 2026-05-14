@@ -122,7 +122,8 @@ def load_model():
 # ══════════════════════════════════════════════════════════
 
 def prepare_dataset(tokenizer):
-    """Chuyển QA pairs sang chat format cho SFTTrainer"""
+    """Chuyển QA pairs sang chat format cho SFTTrainer.
+    Enriched: dùng semantic_tags + text_for_generation từ phase2."""
     
     qa_train_path = BASE_DIR / "processed" / "qa_train.json"
     if not qa_train_path.exists():
@@ -134,13 +135,49 @@ def prepare_dataset(tokenizer):
         qa_pairs = json.load(f)
     
     print(f"[INFO] Loaded {len(qa_pairs)} QA pairs")
+
+    # [NEW] Load chunks để lấy semantic_tags + text_for_generation
+    chunks_path = BASE_DIR / "processed" / "chunks.json"                       # [NEW]
+    chunk_lookup = {}                                                          # [NEW]
+    if chunks_path.exists():                                                   # [NEW]
+        with open(chunks_path, "r", encoding="utf-8") as f:                    # [NEW]
+            chunks_data = json.load(f)                                         # [NEW]
+        chunk_lookup = {c["id"]: c for c in chunks_data}                       # [NEW]
+        print(f"[INFO] Loaded {len(chunk_lookup)} chunks for context enrichment")  # [NEW]
     
     # Chuyển sang chat format
     formatted_data = []
     for qa in qa_pairs:
+        # [NEW] Enrich user message với semantic context + grounding text
+        chunk_id = qa.get("chunk_id", "")                                      # [NEW]
+        chunk_data = chunk_lookup.get(chunk_id, {})                            # [NEW]
+        tags = chunk_data.get("semantic_tags", {})                             # [NEW]
+        gen_text = chunk_data.get("text_for_generation", "")                   # [NEW]
+
+        user_content = qa["question"]                                          # [NEW]
+        if gen_text:                                                           # [NEW]
+            meta_parts = []                                                    # [NEW]
+            if tags.get("doi_tuong"):                                          # [NEW]
+                meta_parts.append(f"Đối tượng: {', '.join(tags['doi_tuong'])}")  # [NEW]
+            if tags.get("loai_van_ban"):                                       # [NEW]
+                meta_parts.append(f"Loại: {', '.join(tags['loai_van_ban'])}")  # [NEW]
+            if tags.get("do_quan_trong"):                                      # [NEW]
+                meta_parts.append(f"Mức quan trọng: {tags['do_quan_trong']}")  # [NEW]
+            meta_str = " | ".join(meta_parts) if meta_parts else ""            # [NEW]
+            max_ctx_chars = 1200                                               # [NEW]
+            ctx_text = gen_text[:max_ctx_chars]                                # [NEW]
+            if len(gen_text) > max_ctx_chars:                                  # [NEW]
+                ctx_text += "..."                                              # [NEW]
+            user_content = (                                                   # [NEW]
+                f"Ngữ cảnh quy chế:\n"                                        # [NEW]
+                f"{f'[{meta_str}]' if meta_str else ''}\n"                     # [NEW]
+                f"{ctx_text}\n\n"                                              # [NEW]
+                f"Câu hỏi: {qa['question']}"                                  # [NEW]
+            )                                                                  # [NEW]
+
         messages = [
             {"role": "system", "content": SYSTEM_PROMPT},
-            {"role": "user", "content": qa["question"]},
+            {"role": "user", "content": user_content},                         # [MOD]
             {"role": "assistant", "content": qa["answer"]}
         ]
         
