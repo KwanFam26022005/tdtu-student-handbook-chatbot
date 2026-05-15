@@ -5,6 +5,7 @@ clean_text/
 processed/
 outputs/
 results/
+results_phase*
 
 # Python
 __pycache__/
