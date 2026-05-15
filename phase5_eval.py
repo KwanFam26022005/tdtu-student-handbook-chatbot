@@ -143,6 +143,7 @@ def run_evaluation():
             references = []
             retrieved_sources = []
             
+            full_results = []                                                  # [NEW]
             for i, qa in enumerate(test_set):
                 print(f"  [{i+1}/{len(test_set)}] {qa['question'][:50]}...")
                 
@@ -151,6 +152,7 @@ def run_evaluation():
                 predictions.append(result["answer"])
                 references.append(qa["answer"])
                 retrieved_sources.append(result.get("sources", []))
+                full_results.append(result)                                    # [NEW]
                 
                 time.sleep(0.1)  # Tránh overload GPU
             
@@ -188,12 +190,20 @@ def run_evaluation():
             print(f"   BERTScore:   {metrics['bertscore_f1']}")
             print(f"   Recall@5:    {metrics['recall_at_5']}")
             
-            # Lưu predictions
+            # Lưu predictions (Cập nhật để lưu toàn bộ metadata từ phase4)
             pred_path = RESULTS_DIR / f"predictions_{config_name}.json"
             preds_data = [
-                {"question": qa["question"], "gold": qa["answer"], 
-                 "prediction": pred, "sources": srcs}
-                for qa, pred, srcs in zip(test_set, predictions, retrieved_sources)
+                {
+                    "question": qa["question"], 
+                    "gold": qa["answer"], 
+                    "prediction": res["answer"], 
+                    "sources": res.get("sources", []),
+                    "sections": res.get("sections", []),
+                    "semantic_tags": res.get("semantic_tags", []),
+                    "crag_verdict": res.get("crag", {}).get("verdict", "N/A"),
+                    "hyde": res.get("hyde_hypothesis", "")
+                }
+                for qa, res in zip(test_set, full_results)
             ]
             with open(pred_path, "w", encoding="utf-8") as f:
                 json.dump(preds_data, f, ensure_ascii=False, indent=2)
