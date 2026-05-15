@@ -393,7 +393,7 @@ class HyDEGenerator:
         with torch.no_grad():
             outputs = self.llm.model.generate(
                 **inputs,
-                max_new_tokens=256,
+                max_new_tokens=156,
                 do_sample=False,
                 repetition_penalty=1.1,
             )
